@@ -1,0 +1,579 @@
+# streamlit_app.py
+# FairCredit Africa — Loan Risk Assistant
+# SDG 8 (Decent Work) · SDG 10 (Reduced Inequalities)
+# Human-in-the-Loop Credit Scoring · Kigali, Rwanda
+# Run: streamlit run streamlit_app.py
+
+import joblib
+import os
+import requests
+import numpy as np
+import pandas as pd
+import streamlit as st
+
+st.set_page_config(
+    page_title="FairCredit Africa",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# ── Master CSS ────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+:root {
+    --gold:    #C8922A;
+    --gold2:   #E8B84B;
+    --dark:    #0C0E13;
+    --surface: #13161E;
+    --card:    #1A1E28;
+    --border:  #252A38;
+    --text:    #EDE8DE;
+    --muted:   #6B7280;
+    --green:   #22C55E;
+    --yellow:  #EAB308;
+    --red:     #EF4444;
+}
+
+html, body, [data-testid="stAppViewContainer"] {
+    background: var(--dark) !important;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text);
+}
+[data-testid="stAppViewContainer"] > .main { background: var(--dark) !important; }
+[data-testid="stSidebar"] { background: var(--surface) !important; border-right: 1px solid var(--border); }
+#MainMenu, footer, header { visibility: hidden; }
+[data-testid="stToolbar"] { display: none; }
+
+[data-testid="stTabs"] button {
+    font-family: 'DM Sans', sans-serif !important;
+    font-weight: 500 !important;
+    color: var(--muted) !important;
+    font-size: 0.9rem !important;
+}
+[data-testid="stTabs"] button[aria-selected="true"] {
+    color: var(--gold) !important;
+    border-bottom-color: var(--gold) !important;
+}
+
+[data-testid="stButton"] button {
+    background: linear-gradient(135deg, var(--gold), var(--gold2)) !important;
+    color: #0C0E13 !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-weight: 700 !important;
+    font-size: 1rem !important;
+    border: none !important;
+    border-radius: 10px !important;
+    letter-spacing: 0.5px;
+}
+
+hr { border-color: var(--border) !important; opacity: 0.5; }
+.block-container { padding: 0 2rem 2rem 2rem !important; max-width: 1400px !important; }
+
+.hero-banner {
+    position: relative; width: 100%; height: 300px;
+    border-radius: 20px; overflow: hidden; margin-bottom: 2rem;
+}
+.hero-banner img {
+    width: 100%; height: 100%; object-fit: cover;
+    opacity: 0.38; filter: saturate(0.7);
+}
+.hero-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, rgba(12,14,19,0.97) 0%, rgba(12,14,19,0.5) 55%, transparent 100%);
+    display: flex; flex-direction: column; justify-content: center; padding: 3rem;
+}
+.hero-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(200,146,42,0.15); border: 1px solid rgba(200,146,42,0.4);
+    color: var(--gold2); border-radius: 20px; padding: 4px 14px;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 1.5px;
+    text-transform: uppercase; margin-bottom: 14px; width: fit-content;
+}
+.hero-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 3rem; font-weight: 800; color: #fff;
+    line-height: 1.1; margin: 0 0 10px 0;
+}
+.hero-title span { color: var(--gold2); }
+.hero-sub { font-size: 0.95rem; color: rgba(237,232,222,0.6); font-weight: 300; max-width: 460px; line-height: 1.6; }
+.sdg-pills { display: flex; gap: 8px; margin-top: 18px; }
+.sdg-pill {
+    background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.25);
+    color: #86efac; border-radius: 20px; padding: 3px 12px;
+    font-size: 0.7rem; font-weight: 600;
+}
+
+.section-head {
+    font-size: 0.65rem; font-weight: 600; letter-spacing: 2.5px;
+    text-transform: uppercase; color: var(--gold);
+    margin: 28px 0 14px 0; display: flex; align-items: center; gap: 10px;
+}
+.section-head::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+.form-card-title {
+    font-size: 0.72rem; font-weight: 600; color: var(--gold2);
+    letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px;
+}
+
+.result-wrapper {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 20px; padding: 28px; margin-top: 20px;
+    position: relative; overflow: hidden;
+}
+.result-wrapper::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+.result-green::before { background: linear-gradient(90deg, #22C55E, #86efac); }
+.result-yellow::before { background: linear-gradient(90deg, #EAB308, #fde68a); }
+.result-red::before { background: linear-gradient(90deg, #EF4444, #fca5a5); }
+
+.prob-label { font-size: 0.65rem; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.prob-value { font-family: 'DM Mono', monospace; font-size: 4.5rem; font-weight: 500; line-height: 1; letter-spacing: -3px; }
+.prob-scale { font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
+.zone-badge { display: inline-flex; align-items: center; gap: 8px; border-radius: 24px; padding: 7px 16px; font-size: 0.82rem; font-weight: 600; margin-top: 14px; }
+.zone-green-badge { background: rgba(34,197,94,0.1); color: #86efac; border: 1px solid rgba(34,197,94,0.25); }
+.zone-yellow-badge { background: rgba(234,179,8,0.1); color: #fde68a; border: 1px solid rgba(234,179,8,0.25); }
+.zone-red-badge { background: rgba(239,68,68,0.1); color: #fca5a5; border: 1px solid rgba(239,68,68,0.25); }
+
+.hitl-panel {
+    background: linear-gradient(135deg, #0f1520, #151c2a);
+    border: 1px solid var(--border); border-left: 4px solid var(--gold);
+    border-radius: 14px; padding: 22px 26px; margin-top: 18px;
+}
+.hitl-header { font-family: 'Playfair Display', serif; font-size: 1.05rem; font-weight: 700; color: var(--gold2); margin-bottom: 8px; }
+.hitl-body { font-size: 0.85rem; color: rgba(237,232,222,0.68); line-height: 1.7; }
+
+.zone-ref-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; text-align: center; }
+.zone-ref-range { font-family: 'DM Mono', monospace; font-size: 1rem; font-weight: 500; margin-bottom: 4px; }
+.zone-ref-label { font-size: 0.75rem; color: var(--muted); }
+.zone-ref-action { font-size: 0.7rem; margin-top: 3px; font-weight: 600; }
+
+.cmu-banner {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; overflow: hidden; display: flex;
+    align-items: stretch; margin-bottom: 22px; height: 130px;
+}
+.cmu-img { width: 240px; object-fit: cover; flex-shrink: 0; filter: saturate(0.7); }
+.cmu-text { padding: 18px 22px; display: flex; flex-direction: column; justify-content: center; }
+.cmu-title { font-family: 'Playfair Display', serif; font-size: 0.95rem; font-weight: 700; color: var(--gold2); margin-bottom: 5px; }
+.cmu-sub { font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+
+.fairness-item {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 13px 16px; margin-bottom: 7px;
+    display: flex; justify-content: space-between; align-items: center;
+}
+.fi-left strong { color: var(--text); font-size: 0.85rem; }
+.fi-left code {
+    background: rgba(200,146,42,0.1); color: var(--gold2);
+    font-family: 'DM Mono', monospace; font-size: 0.7rem;
+    padding: 2px 6px; border-radius: 4px; margin-left: 7px;
+}
+.fi-right { font-size: 0.76rem; color: var(--muted); max-width: 280px; text-align: right; }
+</style>
+""", unsafe_allow_html=True)
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("### ⚙️ Settings")
+    USE_API    = st.checkbox("Use Flask API", value=False)
+    API_URL    = st.text_input("Flask API URL", value="http://localhost:5000")
+    MODEL_PATH = st.text_input("Model path", value="model/lgb_model.joblib")
+    st.divider()
+    st.markdown("""
+    <div style='font-size:0.82rem;color:#6B7280;line-height:1.6'>
+    Built for financial inclusion across East Africa.<br><br>
+    Model trained on Home Credit Default Risk dataset.<br><br>
+    <strong style='color:#C8922A'>The model informs. You decide.</strong>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ── Hero Banner (Kigali) ──────────────────────────────────────────────────────
+st.markdown("""
+<div class="hero-banner">
+    <img src="https://images.unsplash.com/photo-1611348586840-ea9872d33411?w=1400&q=80"
+         alt="Kigali city"
+         onerror="this.src='https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=1400&q=80'"/>
+    <div class="hero-overlay">
+        <div class="hero-tag">🌍 Kigali, Rwanda · East Africa</div>
+        <div class="hero-title">Fair<span>Credit</span> Africa</div>
+        <div class="hero-sub">
+            AI-assisted loan risk assessment for the underbanked.
+            Empowering loan officers with data — not replacing their judgment.
+        </div>
+        <div class="sdg-pills">
+            <span class="sdg-pill">✦ SDG 8 — Decent Work</span>
+            <span class="sdg-pill">✦ SDG 10 — Reduced Inequalities</span>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ── Tabs ──────────────────────────────────────────────────────────────────────
+tab1, tab2 = st.tabs(["  🧑‍💼  Applicant Assessment  ", "  ⚖️  Fairness & SDG Context  "])
+
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab1:
+
+    PERSONAS = {
+        "Government Worker": {
+            "emoji": "\U0001f469\u200d\U0001f4bc", "desc": "\U0001f7e2 LOW RISK · Stable salary, has previous loan history",
+            "img": "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&q=75",
+            "income": 280000, "credit": 400000, "annuity": 18000, "goods": 380000,
+            "age": 38, "employed": 10, "children": 2, "family": 4,
+            "ext1": 0.75, "ext2": 0.75, "ext3": 0.75, "car": 1,
+            "gender": "F", "education": "Higher education",
+            "income_type": "State servant", "housing": "House / apartment",
+        },
+        "CMU Graduate": {
+            "emoji": "\U0001f469\u200d\U0001f393", "desc": "\U0001f7e2 LOW-MEDIUM · First job, has savings account",
+            "img": "https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=400&q=75",
+            "income": 120000, "credit": 150000, "annuity": 8000, "goods": 140000,
+            "age": 24, "employed": 1, "children": 0, "family": 2,
+            "ext1": 0.55, "ext2": 0.55, "ext3": 0.55, "car": 0,
+            "gender": "F", "education": "Higher education",
+            "income_type": "Working", "housing": "With parents",
+        },
+        "Market Vendor": {
+            "emoji": "\U0001f3ea", "desc": "\U0001f7e1 MEDIUM · Informal income, mobile money user",
+            "img": "https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=400&q=75",
+            "income": 80000, "credit": 300000, "annuity": 15000, "goods": 280000,
+            "age": 35, "employed": 3, "children": 2, "family": 4,
+            "ext1": 0.35, "ext2": 0.35, "ext3": 0.35, "car": 0,
+            "gender": "F", "education": "Secondary / secondary special",
+            "income_type": "Working", "housing": "Rented apartment",
+        },
+        "Boda Boda Rider": {
+            "emoji": "\U0001f697", "desc": "\U0001f7e1 MEDIUM-HIGH · High debt, mobile money only",
+            "img": "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&q=75",
+            "income": 60000, "credit": 500000, "annuity": 25000, "goods": 480000,
+            "age": 27, "employed": 2, "children": 1, "family": 3,
+            "ext1": 0.08, "ext2": 0.35, "ext3": 0.08, "car": 1,
+            "gender": "M", "education": "Secondary / secondary special",
+            "income_type": "Working", "housing": "With parents",
+        },
+        "Single Mother": {
+            "emoji": "\U0001f3e0", "desc": "\U0001f534 HIGH RISK · Low income, no credit history",
+            "img": "https://images.unsplash.com/photo-1531983412531-1f49a365ffed?w=400&q=75",
+            "income": 45000, "credit": 200000, "annuity": 12000, "goods": 190000,
+            "age": 31, "employed": 1, "children": 3, "family": 4,
+            "ext1": 0.08, "ext2": 0.08, "ext3": 0.08, "car": 0,
+            "gender": "F", "education": "Secondary / secondary special",
+            "income_type": "Working", "housing": "Rented apartment",
+        },
+        "Smallholder Farmer": {
+            "emoji": "\U0001f468\u200d\U0001f33e", "desc": "\U0001f534 VERY HIGH · No employment, no credit history",
+            "img": "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=400&q=75",
+            "income": 30000, "credit": 500000, "annuity": 30000, "goods": 480000,
+            "age": 42, "employed": 0, "children": 5, "family": 7,
+            "ext1": 0.08, "ext2": 0.08, "ext3": 0.08, "car": 0,
+            "gender": "M", "education": "Lower secondary",
+            "income_type": "Working", "housing": "House / apartment",
+        },
+    }
+
+    st.markdown('<div class="section-head">Step 1 — Select Applicant Profile</div>', unsafe_allow_html=True)
+
+    if "selected_persona" not in st.session_state:
+        st.session_state.selected_persona = "Market Vendor"
+
+    cols = st.columns(6)
+    for i, (name, pd_) in enumerate(PERSONAS.items()):
+        with cols[i]:
+            is_active  = st.session_state.selected_persona == name
+            border_col = "#C8922A" if is_active else "#252A38"
+            bg_col     = "#1f1c0f" if is_active else "#1A1E28"
+            if st.button(f"{pd_['emoji']} {name}", key=f"btn_{name}", use_container_width=True):
+                st.session_state.selected_persona = name
+                st.rerun()
+            st.markdown(f"""
+            <div style="background:{bg_col};border:2px solid {border_col};
+                        border-radius:12px;overflow:hidden;margin-top:-8px;margin-bottom:4px;">
+                <img src="{pd_['img']}" style="width:100%;height:85px;object-fit:cover;
+                     filter:saturate(0.75);" onerror="this.style.display='none'"/>
+                <div style="padding:7px 9px 10px;">
+                    <div style="font-size:0.67rem;color:#6B7280;line-height:1.4">{pd_['desc']}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    p = PERSONAS[st.session_state.selected_persona]
+    st.markdown(f"""
+    <div style="background:rgba(200,146,42,0.07);border:1px solid rgba(200,146,42,0.22);
+                border-radius:10px;padding:11px 16px;margin-bottom:6px;">
+        <span style="font-size:0.95rem;font-weight:600;color:#E8B84B">{p['emoji']} {st.session_state.selected_persona}</span>
+        <span style="color:#6B7280;font-size:0.82rem;margin-left:10px">— {p['desc']}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.divider()
+    st.markdown('<div class="section-head">Step 2 — Applicant Details</div>', unsafe_allow_html=True)
+
+    left_col, right_col = st.columns([1.2, 1])
+
+    with left_col:
+        st.markdown('<div class="form-card-title">💰 Financial Information</div>', unsafe_allow_html=True)
+        fc1, fc2 = st.columns(2)
+        with fc1:
+            amt_income      = st.number_input("Monthly Income (RWF)", min_value=0.0, value=float(p["income"]), step=5000.0)
+            amt_credit      = st.number_input("Loan Amount (RWF)", min_value=0.0, value=float(p["credit"]), step=10000.0)
+            amt_annuity     = st.number_input("Monthly Repayment (RWF)", min_value=0.0, value=float(p["annuity"]), step=1000.0)
+            amt_goods_price = st.number_input("Purpose / Item Value (RWF)", min_value=0.0, value=float(p["goods"]), step=5000.0)
+        with fc2:
+            age_years      = st.number_input("Age (years)", min_value=18, max_value=70, value=p["age"])
+            years_employed = st.number_input("Years in Current Work", min_value=0, max_value=40, value=p["employed"])
+            cnt_children   = st.number_input("Number of Dependants", min_value=0, value=p["children"])
+            cnt_fam        = st.number_input("Total Family Members", min_value=1, value=p["family"])
+
+    with right_col:
+        st.markdown('<div class="form-card-title">🪪 Demographics *(fairness monitoring only)*</div>', unsafe_allow_html=True)
+        edu_list  = ["Secondary / secondary special","Higher education","Incomplete higher","Lower secondary","Academic degree"]
+        inc_list  = ["Working","Commercial associate","Pensioner","State servant","Unemployed","Student","Businessman"]
+        hou_list  = ["House / apartment","With parents","Municipal apartment","Rented apartment","Office apartment","Co-op apartment"]
+        gender       = st.selectbox("Gender", ["F","M"], index=["F","M"].index(p["gender"]))
+        education    = st.selectbox("Education Level", edu_list, index=edu_list.index(p["education"]))
+        income_type  = st.selectbox("Employment Type", inc_list, index=inc_list.index(p["income_type"]))
+        housing_type = st.selectbox("Housing Situation", hou_list, index=hou_list.index(p["housing"]))
+
+        st.markdown('<div class="form-card-title" style="margin-top:14px">📱 Alternative Credit Signals</div>', unsafe_allow_html=True)
+        credit_options = {
+            "No credit history": 0.08,
+            "Mobile money user": 0.35,
+            "Has savings account": 0.55,
+            "Has previous loan": 0.75,
+        }
+        def score_to_label(v):
+            if v <= 0.15: return "No credit history"
+            elif v <= 0.45: return "Mobile money user"
+            elif v <= 0.65: return "Has savings account"
+            else: return "Has previous loan"
+
+        cs1        = st.selectbox("Signal 1", list(credit_options.keys()), index=list(credit_options.keys()).index(score_to_label(p["ext1"])))
+        cs2        = st.selectbox("Signal 2", list(credit_options.keys()), index=list(credit_options.keys()).index(score_to_label(p["ext2"])))
+        cs3        = st.selectbox("Signal 3", list(credit_options.keys()), index=list(credit_options.keys()).index(score_to_label(p["ext3"])))
+        owns_asset = st.selectbox("Owns Asset (car/moto)", ["No","Yes"], index=p["car"])
+
+    days_birth    = -(age_years * 365)
+    days_employed = -(years_employed * 365)
+    ext1 = credit_options[cs1]; ext2 = credit_options[cs2]; ext3 = credit_options[cs3]
+    car  = 1 if owns_asset == "Yes" else 0
+
+    st.divider()
+    st.markdown('<div class="section-head">Step 3 — Run Assessment</div>', unsafe_allow_html=True)
+
+    if st.button("🔍  Assess Credit Risk", use_container_width=True, type="primary"):
+        input_features = {
+            "AMT_INCOME_TOTAL": amt_income, "AMT_CREDIT": amt_credit,
+            "AMT_ANNUITY": amt_annuity, "AMT_GOODS_PRICE": amt_goods_price,
+            "DAYS_BIRTH": days_birth, "DAYS_EMPLOYED": days_employed,
+            "CNT_CHILDREN": cnt_children, "CNT_FAM_MEMBERS": cnt_fam,
+            "EXT_SOURCE_1": ext1, "EXT_SOURCE_2": ext2, "EXT_SOURCE_3": ext3,
+            "FLAG_OWN_CAR": car,
+        }
+        demographic_features = {
+            "CODE_GENDER": gender, "NAME_EDUCATION_TYPE": education,
+            "NAME_INCOME_TYPE": income_type, "NAME_HOUSING_TYPE": housing_type,
+        }
+
+        result = None
+        with st.spinner("Running risk assessment..."):
+            if USE_API:
+                try:
+                    resp = requests.post(f"{API_URL}/predict",
+                                         json={**input_features, **demographic_features}, timeout=5)
+                    if resp.status_code == 200: result = resp.json()
+                    else: st.error(f"API error {resp.status_code}: {resp.text}")
+                except Exception as e:
+                    st.error(f"Could not reach API: {e}")
+            else:
+                if not os.path.exists(MODEL_PATH):
+                    st.error(f"Model not found at {MODEL_PATH}.")
+                else:
+                    artefact   = joblib.load(MODEL_PATH)
+                    mdl        = artefact["model"]
+                    feat_names = artefact["feature_names"]
+                    df         = pd.DataFrame([input_features])
+                    df         = df.reindex(columns=feat_names, fill_value=0)
+                    pred       = mdl.predict(df)[0]
+
+                    # ExponentiatedGradient: weighted average of inner LGBMClassifier predictors
+                    if hasattr(mdl, 'predictors_') and hasattr(mdl, 'weights_'):
+                        weights = np.array(mdl.weights_)
+                        weights = weights / weights.sum()
+                        prob = 0.0
+                        for w, predictor in zip(weights, mdl.predictors_):
+                            if hasattr(predictor, 'predict_proba'):
+                                prob += w * predictor.predict_proba(df)[0, 1]
+                            else:
+                                prob += w * float(predictor.predict(df)[0])
+                    elif hasattr(mdl, 'predict_proba'):
+                        prob = mdl.predict_proba(df)[0, 1]
+                    else:
+                        prob = float(pred)
+
+                    result     = {"default_prediction": int(pred), "default_probability": round(float(prob),4)}
+
+        if result:
+            prob = result.get("default_probability", 0.0)
+            if prob <= 0.35:
+                color, badge_cls, label, action, result_cls = (
+                    "#22C55E","zone-green-badge","🟢 Likely to Repay",
+                    "Loan officer may consider approving subject to standard verification.","result-green")
+            elif prob <= 0.65:
+                color, badge_cls, label, action, result_cls = (
+                    "#EAB308","zone-yellow-badge","🟡 Needs Further Review",
+                    "Conduct additional interviews, verify income, or request supporting documents.","result-yellow")
+            else:
+                color, badge_cls, label, action, result_cls = (
+                    "#EF4444","zone-red-badge","🔴 High Default Risk",
+                    "Carefully review. Consider requesting collateral or a guarantor.","result-red")
+
+            res1, res2 = st.columns([1,1])
+            with res1:
+                st.markdown(f"""
+                <div class="result-wrapper {result_cls}">
+                    <div class="prob-label">Default Probability Score</div>
+                    <div class="prob-value" style="color:{color}">{prob:.2f}</div>
+                    <div class="prob-scale">0.00 — no risk &nbsp;·&nbsp; 1.00 — certain default</div>
+                    <div class="{badge_cls} zone-badge">{label}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with res2:
+                demo_df = pd.DataFrame({
+                    "": ["Gender","Education","Employment","Housing"],
+                    "Value": [gender, education, income_type, housing_type]
+                })
+                st.dataframe(demo_df, hide_index=True, use_container_width=True, height=178)
+                ratio = (amt_annuity * 12) / amt_income if amt_income > 0 else 0
+                rc    = "#EF4444" if ratio > 0.5 else "#22C55E" if ratio < 0.3 else "#EAB308"
+                st.markdown(f"""
+                <div style="background:#1A1E28;border:1px solid #252A38;border-radius:10px;padding:12px 16px;margin-top:8px;">
+                    <div style="font-size:0.65rem;color:#6B7280;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px">Debt-to-Income Ratio</div>
+                    <div style="font-family:'DM Mono',monospace;font-size:1.5rem;color:{rc};font-weight:500">{ratio:.1%}</div>
+                    <div style="font-size:0.7rem;color:#6B7280;margin-top:2px">Annual repayments vs monthly income</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown(f"""
+            <div class="hitl-panel">
+                <div class="hitl-header">👤 Loan Officer Decision Required</div>
+                <div class="hitl-body">
+                    The model has assigned a risk score of
+                    <strong style="color:{color};font-family:'DM Mono',monospace">{prob:.2f}</strong>
+                    for this applicant.<br><br>
+                    <strong style="color:#EDE8DE">Suggested action:</strong> {action}<br><br>
+                    Context the model cannot see — community standing, seasonal income patterns,
+                    family support networks — must inform the final decision.
+                    <strong style="color:#C8922A">The model informs. You decide.</strong>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown('<div class="section-head" style="margin-top:28px">Risk Zone Reference</div>', unsafe_allow_html=True)
+            z1, z2, z3 = st.columns(3)
+            with z1:
+                st.markdown("""<div class="zone-ref-card">
+                    <div class="zone-ref-range" style="color:#22C55E">0.00 – 0.35</div>
+                    <div class="zone-ref-label">🟢 Likely to Repay</div>
+                    <div class="zone-ref-action" style="color:#86efac">Officer may approve</div>
+                </div>""", unsafe_allow_html=True)
+            with z2:
+                st.markdown("""<div class="zone-ref-card">
+                    <div class="zone-ref-range" style="color:#EAB308">0.36 – 0.65</div>
+                    <div class="zone-ref-label">🟡 Needs Review</div>
+                    <div class="zone-ref-action" style="color:#fde68a">Officer must investigate</div>
+                </div>""", unsafe_allow_html=True)
+            with z3:
+                st.markdown("""<div class="zone-ref-card">
+                    <div class="zone-ref-range" style="color:#EF4444">0.66 – 1.00</div>
+                    <div class="zone-ref-label">🔴 High Risk</div>
+                    <div class="zone-ref-action" style="color:#fca5a5">Request more info</div>
+                </div>""", unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab2:
+    st.markdown("""
+    <div class="cmu-banner">
+        <img class="cmu-img"
+             src="https://images.unsplash.com/photo-1607237138185-eedd9c632b0b?w=600&q=80"
+             alt="CMU Africa"
+             onerror="this.style.display='none'"/>
+        <div class="cmu-text">
+            <div class="cmu-title">Carnegie Mellon University Africa · Kigali</div>
+            <div class="cmu-sub">Research in AI fairness and financial inclusion for underserved communities
+            across East and Central Africa. This tool demonstrates responsible AI in high-stakes lending.</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="section-head">Why Fairness Matters in Credit Scoring</div>', unsafe_allow_html=True)
+    st.markdown("""
+    Traditional credit scoring **systematically excludes** millions of Africans who lack formal credit history —
+    not because they are bad borrowers, but because they operate outside the formal financial system.
+    This model uses alternative signals to assess risk more equitably.
+    """)
+
+    st.markdown('<div class="section-head">Protected Attributes Monitored</div>', unsafe_allow_html=True)
+    for name, col, sdg in [
+        ("Gender","CODE_GENDER","SDG 10 — Women face systemic barriers to credit access"),
+        ("Education Level","NAME_EDUCATION_TYPE","SDG 10 — Low formal education ≠ inability to repay"),
+        ("Employment Type","NAME_INCOME_TYPE","SDG 8 — Informal workers deserve fair assessment"),
+        ("Housing Situation","NAME_HOUSING_TYPE","SDG 10 — Renting ≠ financial irresponsibility"),
+    ]:
+        st.markdown(f"""
+        <div class="fairness-item">
+            <div class="fi-left"><strong>{name}</strong><code>{col}</code></div>
+            <div class="fi-right">{sdg}</div>
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown('<div class="section-head">Alternative Credit Signals — Our African Adaptation</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background:#1A1E28; border:1px solid #252A38; border-left: 4px solid #C8922A;
+                border-radius:12px; padding:20px 24px; margin-bottom:16px; line-height:1.8;">
+        <div style="font-size:0.68rem; font-weight:600; letter-spacing:2px; text-transform:uppercase;
+                    color:#C8922A; margin-bottom:10px">⚠️ Important Demo Note</div>
+        <div style="font-size:0.88rem; color:rgba(237,232,222,0.8)">
+            The original Home Credit dataset contains three external credit bureau scores
+            (<strong style="color:#E8B84B">EXT_SOURCE_1, EXT_SOURCE_2, EXT_SOURCE_3</strong>)
+            sourced from third-party risk assessment agencies — tools that are largely unavailable
+            to the majority of Africans who operate outside the formal financial system.<br><br>
+            For this demonstration, we have <strong style="color:#E8B84B">relabeled these scores</strong>
+            using African-relevant alternatives that carry the same mathematical weight in the model:
+            <br><br>
+            &nbsp;&nbsp;• <strong style="color:#86efac">No credit history</strong> → score of 0.08 &nbsp;(no external signal at all)<br>
+            &nbsp;&nbsp;• <strong style="color:#86efac">Mobile money user</strong> → score of 0.35 &nbsp;(MTN MoMo, Airtel Money digital footprint)<br>
+            &nbsp;&nbsp;• <strong style="color:#86efac">Has savings account</strong> → score of 0.55 &nbsp;(formal banking engagement)<br>
+            &nbsp;&nbsp;• <strong style="color:#86efac">Has previous loan</strong> &nbsp;&nbsp;→ score of 0.75 &nbsp;(proven repayment history)<br><br>
+            The <strong style="color:#E8B84B">direction is accurate</strong> — someone with no credit history
+            genuinely receives a lower score than someone with a repayment track record.
+            This mirrors what African fintechs like <em>Equity Bank, KCB, and MTN MoMo</em> already
+            do when scoring thin-file borrowers. The relabeling makes the model contextually honest
+            for East Africa without changing any underlying prediction logic.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="section-head">Human-in-the-Loop Principle</div>', unsafe_allow_html=True)
+    st.markdown("""
+    > *"The model doesn't decide — it informs. A human loan officer always makes the final call.
+    This prevents algorithmic discrimination against people with thin credit files."*
+
+    **Fairness metrics evaluated during training:** Demographic Parity Difference,
+    Equalized Odds Difference, per-group Recall, Precision, and AUC.
+    """)
+
+    st.markdown('<div class="section-head">Persona Risk Profiles</div>', unsafe_allow_html=True)
+    st.dataframe(pd.DataFrame({
+        "Persona": ["🏪 Market Vendor","🚗 Boda Boda Rider","👩‍🎓 CMU Graduate",
+                    "👨‍🌾 Smallholder Farmer","👩‍💼 Government Worker","🏠 Single Mother"],
+        "Typical Risk": ["Medium","Medium–High","Low–Medium","High","Low","High"],
+        "Key Factor": [
+            "Informal income, low credit signals",
+            "Young, high loan-to-income ratio",
+            "Thin file but stable employment",
+            "Seasonal income, very low credit signals",
+            "Stable salary, good credit signals",
+            "Low income, high dependants",
+        ]
+    }), hide_index=True, use_container_width=True)
