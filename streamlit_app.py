@@ -1,5 +1,5 @@
 # streamlit_app.py
-# FairCredit Africa — Loan Risk Assistant
+# FairCredit Africa — Loan Risk Assistant with AI Loan Officer (Groq)
 # SDG 8 (Decent Work) · SDG 10 (Reduced Inequalities)
 # Human-in-the-Loop Credit Scoring · Kigali, Rwanda
 # Run: streamlit run streamlit_app.py
@@ -10,11 +10,12 @@ import requests
 import numpy as np
 import pandas as pd
 import streamlit as st
+from groq import Groq
 
 st.set_page_config(
     page_title="FairCredit Africa",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # ── Master CSS ────────────────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ st.markdown("""
     --border:  #252A38;
     --text:    #EDE8DE;
     --muted:   #6B7280;
+    --label:   #C8D0DC;
     --green:   #22C55E;
     --yellow:  #EAB308;
     --red:     #EF4444;
@@ -117,6 +119,35 @@ hr { border-color: var(--border) !important; opacity: 0.5; }
     letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px;
 }
 
+[data-testid="stNumberInput"] label,
+[data-testid="stSelectbox"] label,
+[data-testid="stTextInput"] label,
+[data-testid="stCheckbox"] label {
+    color: #C8D0DC !important;
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+    font-family: 'DM Sans', sans-serif !important;
+}
+
+/* Make all streamlit input labels clearly visible */
+[data-testid="stNumberInput"] label,
+[data-testid="stSelectbox"] label,
+[data-testid="stTextInput"] label,
+[data-testid="stCheckbox"] label {
+    color: #C8D0DC !important;
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+    font-family: 'DM Sans', sans-serif !important;
+}
+
+.demo-tip {
+    background: rgba(200,146,42,0.08);
+    border: 1px solid rgba(200,146,42,0.25);
+    border-left: 4px solid var(--gold);
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;
+    font-size: 0.82rem; color: rgba(237,232,222,0.8); line-height: 1.6;
+}
+
 .result-wrapper {
     background: var(--card); border: 1px solid var(--border);
     border-radius: 20px; padding: 28px; margin-top: 20px;
@@ -142,6 +173,39 @@ hr { border-color: var(--border) !important; opacity: 0.5; }
 }
 .hitl-header { font-family: 'Playfair Display', serif; font-size: 1.05rem; font-weight: 700; color: var(--gold2); margin-bottom: 8px; }
 .hitl-body { font-size: 0.85rem; color: rgba(237,232,222,0.68); line-height: 1.7; }
+
+.advisor-panel {
+    background: linear-gradient(135deg, #0d1a0d, #111a11);
+    border: 1px solid rgba(34,197,94,0.2);
+    border-left: 4px solid #22C55E;
+    border-radius: 14px; padding: 24px 28px; margin-top: 20px;
+}
+.advisor-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.advisor-avatar {
+    width: 42px; height: 42px; border-radius: 50%;
+    background: linear-gradient(135deg, #22C55E, #166534);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem; flex-shrink: 0;
+}
+.advisor-name { font-family: 'Playfair Display', serif; font-size: 1rem; font-weight: 700; color: #86efac; }
+.advisor-title { font-size: 0.72rem; color: #6B7280; margin-top: 1px; }
+.advisor-body { font-size: 0.88rem; color: rgba(237,232,222,0.82); line-height: 1.85; }
+
+.chat-container {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 20px; margin-top: 16px;
+    max-height: 400px; overflow-y: auto;
+}
+.chat-msg-user {
+    background: rgba(200,146,42,0.1); border: 1px solid rgba(200,146,42,0.2);
+    border-radius: 12px 12px 4px 12px; padding: 10px 14px; margin-bottom: 12px;
+    font-size: 0.85rem; color: var(--text); margin-left: 20%;
+}
+.chat-msg-ai {
+    background: rgba(34,197,94,0.06); border: 1px solid rgba(34,197,94,0.15);
+    border-radius: 12px 12px 12px 4px; padding: 10px 14px; margin-bottom: 12px;
+    font-size: 0.85rem; color: rgba(237,232,222,0.85); margin-right: 20%; line-height: 1.7;
+}
 
 .zone-ref-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; text-align: center; }
 .zone-ref-range { font-family: 'DM Mono', monospace; font-size: 1rem; font-weight: 500; margin-bottom: 4px; }
@@ -173,6 +237,109 @@ hr { border-color: var(--border) !important; opacity: 0.5; }
 </style>
 """, unsafe_allow_html=True)
 
+# ── Groq client ───────────────────────────────────────────────────────────────
+def get_groq_client(api_key):
+    if api_key:
+        return Groq(api_key=api_key)
+    return None
+
+# ── AI Loan Officer system prompt ─────────────────────────────────────────────
+SYSTEM_PROMPT = """You are the FairCredit Advisor — a Senior Loan Officer and Financial Inclusion Specialist
+at FairCredit Africa, based in Kigali, Rwanda.
+
+Your philosophy: "Every rejection is a person denied dignity. Every approval is a family with a future."
+
+Your role is to assess loan applications for people largely excluded from traditional banking —
+market vendors, farmers, boda boda riders, graduates, single mothers — using a fairness-aware AI model.
+
+You always:
+1. Reason from the ACTUAL numbers provided — income, loan amount, debt-to-income ratio, credit signals, risk score
+2. Connect your reasoning explicitly to SDG 8 (Decent Work and Economic Growth) and SDG 10 (Reduced Inequalities)
+3. Give a structured, comprehensive assessment with clear justification
+4. Suggest concrete alternatives when declining — never just say no without a path forward
+5. Acknowledge the human story behind the numbers
+6. Reference the specific alternative credit signals (mobile money, savings, loan history) and their impact
+7. Be honest about risk while being a genuine advocate for financial inclusion
+
+Your assessment must always include these five sections:
+RISK ANALYSIS — What the numbers say and why
+FAIRNESS LENS — What traditional scoring would miss about this applicant
+SDG ALIGNMENT — Specific connection to SDG 8 or SDG 10 with explanation
+RECOMMENDATION — Approve / Approve with conditions / Restructure / Decline with alternative path
+NEXT STEPS — Concrete actions for the applicant or loan officer
+
+Keep responses clear, warm, and professional. Write in paragraphs.
+Show genuine care for the applicant while being financially responsible.
+When asked follow-up questions, answer as the FairCredit Advisor with deep knowledge
+of East African financial inclusion, microfinance, and responsible AI in credit scoring."""
+
+
+def generate_assessment(client, applicant_data):
+    """Generate AI loan officer assessment from actual applicant metrics."""
+    prompt = f"""Please provide a comprehensive loan assessment for the following applicant.
+Reason entirely from these actual numbers — do not use generic responses.
+
+APPLICANT PROFILE:
+- Persona: {applicant_data['persona']}
+- Gender: {applicant_data['gender']} | Education: {applicant_data['education']}
+- Employment Type: {applicant_data['income_type']} | Housing: {applicant_data['housing_type']}
+- Age: {applicant_data['age']} years | Years in Current Work: {applicant_data['years_employed']}
+- Number of Dependants: {applicant_data['children']} | Family Size: {applicant_data['family']}
+
+FINANCIAL METRICS:
+- Monthly Income: RWF {applicant_data['income']:,.0f}
+- Loan Amount Requested: RWF {applicant_data['credit']:,.0f}
+- Monthly Repayment Required: RWF {applicant_data['annuity']:,.0f}
+- Purpose / Item Value: RWF {applicant_data['goods']:,.0f}
+- Debt-to-Income Ratio: {applicant_data['dti']:.1%}
+
+ALTERNATIVE CREDIT SIGNALS:
+- Signal 1: {applicant_data['cs1']}
+- Signal 2: {applicant_data['cs2']}
+- Signal 3: {applicant_data['cs3']}
+- Owns Asset (car/moto): {applicant_data['owns_asset']}
+
+AI MODEL OUTPUT:
+- Fairness-Adjusted Risk Index: {applicant_data['prob']:.2f} (from fairness-constrained classifier, not raw probability)
+- Risk Zone: {applicant_data['zone']}
+- Model: Fairness-constrained LightGBM ensemble (ExponentiatedGradient)
+
+Please provide your full assessment covering all five sections."""
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        max_tokens=1000,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user",   "content": prompt}
+        ]
+    )
+    return response.choices[0].message.content
+
+
+def chat_with_advisor(client, user_message, applicant_data, chat_history):
+    """Continue conversation with the AI loan officer."""
+    context = f"""[Current applicant: {applicant_data['persona']},
+Score: {applicant_data['prob']:.2f}, Zone: {applicant_data['zone']},
+Income: RWF {applicant_data['income']:,.0f}, Loan: RWF {applicant_data['credit']:,.0f},
+DTI: {applicant_data['dti']:.1%},
+Signals: {applicant_data['cs1']}, {applicant_data['cs2']}, {applicant_data['cs3']}]
+
+User question: {user_message}"""
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for msg in chat_history:
+        messages.append(msg)
+    messages.append({"role": "user", "content": context})
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        max_tokens=600,
+        messages=messages
+    )
+    return response.choices[0].message.content
+
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚙️ Settings")
@@ -180,15 +347,31 @@ with st.sidebar:
     API_URL    = st.text_input("Flask API URL", value="http://localhost:5000")
     MODEL_PATH = st.text_input("Model path", value="model/lgb_model.joblib")
     st.divider()
+    st.markdown("### 🤖 AI Loan Officer")
+    GROQ_KEY = st.text_input(
+        "Groq API Key", type="password",
+        value=os.environ.get("GROQ_API_KEY", ""),
+        help="Get free key at console.groq.com"
+    )
+    if GROQ_KEY:
+        os.environ["GROQ_API_KEY"] = GROQ_KEY
+    st.markdown("""
+    <div style='font-size:0.75rem;color:#6B7280;margin-top:6px'>
+    Get a free key at <strong>console.groq.com</strong><br>
+    No credit card required.
+    </div>
+    """, unsafe_allow_html=True)
+    st.divider()
     st.markdown("""
     <div style='font-size:0.82rem;color:#6B7280;line-height:1.6'>
     Built for financial inclusion across East Africa.<br><br>
     Model trained on Home Credit Default Risk dataset.<br><br>
-    <strong style='color:#C8922A'>The model informs. You decide.</strong>
+    <strong style='color:#C8922A'>The model informs. You decide.</strong><br><br>
+    <em style='color:#4B5563;font-size:0.72rem'>Score = fairness-constrained risk index, not a calibrated probability.</em>
     </div>
     """, unsafe_allow_html=True)
 
-# ── Hero Banner (Kigali) ──────────────────────────────────────────────────────
+# ── Hero Banner ───────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="hero-banner">
     <img src="https://images.unsplash.com/photo-1611348586840-ea9872d33411?w=1400&q=80"
@@ -215,10 +398,26 @@ tab1, tab2 = st.tabs(["  🧑‍💼  Applicant Assessment  ", "  ⚖️  Fairne
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
 
+    def get_probability(mdl, df):
+        if hasattr(mdl, 'predictors_') and hasattr(mdl, 'weights_'):
+            weights = np.array(mdl.weights_)
+            weights = weights / weights.sum()
+            prob = 0.0
+            for w, predictor in zip(weights, mdl.predictors_):
+                if hasattr(predictor, 'predict_proba'):
+                    prob += w * predictor.predict_proba(df)[0, 1]
+                else:
+                    prob += w * float(predictor.predict(df)[0])
+            return round(float(prob), 4)
+        elif hasattr(mdl, 'predict_proba'):
+            return round(float(mdl.predict_proba(df)[0, 1]), 4)
+        else:
+            return round(float(mdl.predict(df)[0]), 4)
+
     PERSONAS = {
         "Government Worker": {
-            "emoji": "\U0001f469\u200d\U0001f4bc", "desc": "\U0001f7e2 LOW RISK · Stable salary, has previous loan history",
-            "img": "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&q=75",
+            "emoji": "👩‍💼", "desc": "🟢 LOW RISK · Stable salary, has previous loan history",
+            "img": "https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=400&q=75",
             "income": 280000, "credit": 400000, "annuity": 18000, "goods": 380000,
             "age": 38, "employed": 10, "children": 2, "family": 4,
             "ext1": 0.75, "ext2": 0.75, "ext3": 0.75, "car": 1,
@@ -226,8 +425,8 @@ with tab1:
             "income_type": "State servant", "housing": "House / apartment",
         },
         "CMU Graduate": {
-            "emoji": "\U0001f469\u200d\U0001f393", "desc": "\U0001f7e2 LOW-MEDIUM · First job, has savings account",
-            "img": "https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=400&q=75",
+            "emoji": "👩‍🎓", "desc": "🟢 LOW-MEDIUM · First job, has savings account",
+            "img": "https://images.unsplash.com/photo-1531545514256-b1400bc00f31?w=400&q=75",
             "income": 120000, "credit": 150000, "annuity": 8000, "goods": 140000,
             "age": 24, "employed": 1, "children": 0, "family": 2,
             "ext1": 0.55, "ext2": 0.55, "ext3": 0.55, "car": 0,
@@ -235,7 +434,7 @@ with tab1:
             "income_type": "Working", "housing": "With parents",
         },
         "Market Vendor": {
-            "emoji": "\U0001f3ea", "desc": "\U0001f7e1 MEDIUM · Informal income, mobile money user",
+            "emoji": "🏪", "desc": "🟡 MEDIUM · Informal income, mobile money user",
             "img": "https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=400&q=75",
             "income": 80000, "credit": 300000, "annuity": 15000, "goods": 280000,
             "age": 35, "employed": 3, "children": 2, "family": 4,
@@ -244,8 +443,8 @@ with tab1:
             "income_type": "Working", "housing": "Rented apartment",
         },
         "Boda Boda Rider": {
-            "emoji": "\U0001f697", "desc": "\U0001f7e1 MEDIUM-HIGH · High debt, mobile money only",
-            "img": "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&q=75",
+            "emoji": "🚗", "desc": "🟡 MEDIUM-HIGH · High debt, mobile money only",
+            "img": "https://images.unsplash.com/photo-1595781572981-d63151b232ed?w=400&q=75",
             "income": 60000, "credit": 500000, "annuity": 25000, "goods": 480000,
             "age": 27, "employed": 2, "children": 1, "family": 3,
             "ext1": 0.08, "ext2": 0.35, "ext3": 0.08, "car": 1,
@@ -253,8 +452,8 @@ with tab1:
             "income_type": "Working", "housing": "With parents",
         },
         "Single Mother": {
-            "emoji": "\U0001f3e0", "desc": "\U0001f534 HIGH RISK · Low income, no credit history",
-            "img": "https://images.unsplash.com/photo-1531983412531-1f49a365ffed?w=400&q=75",
+            "emoji": "🏠", "desc": "🔴 HIGH RISK · Low income, no credit history",
+            "img": "https://images.unsplash.com/photo-1489710437720-ebb67ec84dd2?w=400&q=75",
             "income": 45000, "credit": 200000, "annuity": 12000, "goods": 190000,
             "age": 31, "employed": 1, "children": 3, "family": 4,
             "ext1": 0.08, "ext2": 0.08, "ext3": 0.08, "car": 0,
@@ -262,8 +461,8 @@ with tab1:
             "income_type": "Working", "housing": "Rented apartment",
         },
         "Smallholder Farmer": {
-            "emoji": "\U0001f468\u200d\U0001f33e", "desc": "\U0001f534 VERY HIGH · No employment, no credit history",
-            "img": "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=400&q=75",
+            "emoji": "👨‍🌾", "desc": "🔴 VERY HIGH · No employment, no credit history at all",
+            "img": "https://images.unsplash.com/photo-1556075798-4825dfaaf498?w=400&q=75",
             "income": 30000, "credit": 500000, "annuity": 30000, "goods": 480000,
             "age": 42, "employed": 0, "children": 5, "family": 7,
             "ext1": 0.08, "ext2": 0.08, "ext3": 0.08, "car": 0,
@@ -272,10 +471,23 @@ with tab1:
         },
     }
 
+    st.markdown("""
+    <div class="demo-tip">
+        💡 <strong style="color:#E8B84B">Demo Tip — Smallholder Farmer:</strong>
+        Select the Farmer (all signals = No credit history → 🔴 Red).
+        Then change <strong>Signal 1 to "Mobile money user"</strong> and reassess —
+        watch the score change AND the AI Loan Officer generate a completely different justification.
+    </div>
+    """, unsafe_allow_html=True)
+
     st.markdown('<div class="section-head">Step 1 — Select Applicant Profile</div>', unsafe_allow_html=True)
 
-    if "selected_persona" not in st.session_state:
-        st.session_state.selected_persona = "Market Vendor"
+    if "selected_persona"   not in st.session_state: st.session_state.selected_persona   = "Government Worker"
+    if "chat_history"       not in st.session_state: st.session_state.chat_history       = []
+    if "assessment_done"    not in st.session_state: st.session_state.assessment_done    = False
+    if "current_applicant"  not in st.session_state: st.session_state.current_applicant  = None
+    if "advisor_report"     not in st.session_state: st.session_state.advisor_report     = ""
+    if "follow_up_messages" not in st.session_state: st.session_state.follow_up_messages = []
 
     cols = st.columns(6)
     for i, (name, pd_) in enumerate(PERSONAS.items()):
@@ -284,7 +496,11 @@ with tab1:
             border_col = "#C8922A" if is_active else "#252A38"
             bg_col     = "#1f1c0f" if is_active else "#1A1E28"
             if st.button(f"{pd_['emoji']} {name}", key=f"btn_{name}", use_container_width=True):
-                st.session_state.selected_persona = name
+                st.session_state.selected_persona   = name
+                st.session_state.chat_history       = []
+                st.session_state.assessment_done    = False
+                st.session_state.advisor_report     = ""
+                st.session_state.follow_up_messages = []
                 st.rerun()
             st.markdown(f"""
             <div style="background:{bg_col};border:2px solid {border_col};
@@ -327,26 +543,29 @@ with tab1:
 
     with right_col:
         st.markdown('<div class="form-card-title">🪪 Demographics *(fairness monitoring only)*</div>', unsafe_allow_html=True)
-        edu_list  = ["Secondary / secondary special","Higher education","Incomplete higher","Lower secondary","Academic degree"]
-        inc_list  = ["Working","Commercial associate","Pensioner","State servant","Unemployed","Student","Businessman"]
-        hou_list  = ["House / apartment","With parents","Municipal apartment","Rented apartment","Office apartment","Co-op apartment"]
+        edu_list = ["Secondary / secondary special","Higher education","Incomplete higher","Lower secondary","Academic degree"]
+        inc_list = ["Working","Commercial associate","Pensioner","State servant","Unemployed","Student","Businessman"]
+        hou_list = ["House / apartment","With parents","Municipal apartment","Rented apartment","Office apartment","Co-op apartment"]
         gender       = st.selectbox("Gender", ["F","M"], index=["F","M"].index(p["gender"]))
         education    = st.selectbox("Education Level", edu_list, index=edu_list.index(p["education"]))
         income_type  = st.selectbox("Employment Type", inc_list, index=inc_list.index(p["income_type"]))
         housing_type = st.selectbox("Housing Situation", hou_list, index=hou_list.index(p["housing"]))
 
         st.markdown('<div class="form-card-title" style="margin-top:14px">📱 Alternative Credit Signals</div>', unsafe_allow_html=True)
+        st.caption("⚠️ Change these to see how signals affect both the score AND the AI assessment!")
+
         credit_options = {
-            "No credit history": 0.08,
-            "Mobile money user": 0.35,
+            "No credit history":   0.08,
+            "Mobile money user":   0.35,
             "Has savings account": 0.55,
-            "Has previous loan": 0.75,
+            "Has previous loan":   0.75,
         }
+
         def score_to_label(v):
-            if v <= 0.15: return "No credit history"
+            if v <= 0.15:   return "No credit history"
             elif v <= 0.45: return "Mobile money user"
             elif v <= 0.65: return "Has savings account"
-            else: return "Has previous loan"
+            else:           return "Has previous loan"
 
         cs1        = st.selectbox("Signal 1", list(credit_options.keys()), index=list(credit_options.keys()).index(score_to_label(p["ext1"])))
         cs2        = st.selectbox("Signal 2", list(credit_options.keys()), index=list(credit_options.keys()).index(score_to_label(p["ext2"])))
@@ -355,13 +574,21 @@ with tab1:
 
     days_birth    = -(age_years * 365)
     days_employed = -(years_employed * 365)
-    ext1 = credit_options[cs1]; ext2 = credit_options[cs2]; ext3 = credit_options[cs3]
+    ext1 = credit_options[cs1]
+    ext2 = credit_options[cs2]
+    ext3 = credit_options[cs3]
     car  = 1 if owns_asset == "Yes" else 0
 
     st.divider()
     st.markdown('<div class="section-head">Step 3 — Run Assessment</div>', unsafe_allow_html=True)
 
     if st.button("🔍  Assess Credit Risk", use_container_width=True, type="primary"):
+
+        st.session_state.chat_history       = []
+        st.session_state.follow_up_messages = []
+        st.session_state.advisor_report     = ""
+        st.session_state.assessment_done    = False
+
         input_features = {
             "AMT_INCOME_TOTAL": amt_income, "AMT_CREDIT": amt_credit,
             "AMT_ANNUITY": amt_annuity, "AMT_GOODS_PRICE": amt_goods_price,
@@ -395,47 +622,49 @@ with tab1:
                     df         = pd.DataFrame([input_features])
                     df         = df.reindex(columns=feat_names, fill_value=0)
                     pred       = mdl.predict(df)[0]
-
-                    # ExponentiatedGradient: weighted average of inner LGBMClassifier predictors
-                    if hasattr(mdl, 'predictors_') and hasattr(mdl, 'weights_'):
-                        weights = np.array(mdl.weights_)
-                        weights = weights / weights.sum()
-                        prob = 0.0
-                        for w, predictor in zip(weights, mdl.predictors_):
-                            if hasattr(predictor, 'predict_proba'):
-                                prob += w * predictor.predict_proba(df)[0, 1]
-                            else:
-                                prob += w * float(predictor.predict(df)[0])
-                    elif hasattr(mdl, 'predict_proba'):
-                        prob = mdl.predict_proba(df)[0, 1]
-                    else:
-                        prob = float(pred)
-
-                    result     = {"default_prediction": int(pred), "default_probability": round(float(prob),4)}
+                    prob       = get_probability(mdl, df)
+                    result     = {"default_prediction": int(pred), "default_probability": prob}
 
         if result:
             prob = result.get("default_probability", 0.0)
-            if prob <= 0.35:
-                color, badge_cls, label, action, result_cls = (
-                    "#22C55E","zone-green-badge","🟢 Likely to Repay",
-                    "Loan officer may consider approving subject to standard verification.","result-green")
-            elif prob <= 0.65:
-                color, badge_cls, label, action, result_cls = (
-                    "#EAB308","zone-yellow-badge","🟡 Needs Further Review",
-                    "Conduct additional interviews, verify income, or request supporting documents.","result-yellow")
-            else:
-                color, badge_cls, label, action, result_cls = (
-                    "#EF4444","zone-red-badge","🔴 High Default Risk",
-                    "Carefully review. Consider requesting collateral or a guarantor.","result-red")
+            dti  = (amt_annuity * 12) / amt_income if amt_income > 0 else 0
 
-            res1, res2 = st.columns([1,1])
+            if prob <= 0.30:
+                color, badge_cls, zone_label, action, result_cls = (
+                    "#22C55E","zone-green-badge","🟢 Likely to Repay",
+                    "Loan officer may consider approving subject to standard verification.",
+                    "result-green")
+            elif prob <= 0.45:
+                color, badge_cls, zone_label, action, result_cls = (
+                    "#EAB308","zone-yellow-badge","🟡 Needs Further Review",
+                    "Conduct additional interviews, verify income, or request supporting documents.",
+                    "result-yellow")
+            else:
+                color, badge_cls, zone_label, action, result_cls = (
+                    "#EF4444","zone-red-badge","🔴 High Default Risk",
+                    "Application carries high risk. Request collateral, guarantor, or reduce loan amount.",
+                    "result-red")
+
+            st.session_state.current_applicant = {
+                "persona": st.session_state.selected_persona,
+                "gender": gender, "education": education,
+                "income_type": income_type, "housing_type": housing_type,
+                "age": age_years, "years_employed": years_employed,
+                "children": cnt_children, "family": cnt_fam,
+                "income": amt_income, "credit": amt_credit,
+                "annuity": amt_annuity, "goods": amt_goods_price,
+                "dti": dti, "cs1": cs1, "cs2": cs2, "cs3": cs3,
+                "owns_asset": owns_asset, "prob": prob, "zone": zone_label,
+            }
+
+            res1, res2 = st.columns([1, 1])
             with res1:
                 st.markdown(f"""
                 <div class="result-wrapper {result_cls}">
-                    <div class="prob-label">Default Probability Score</div>
+                    <div class="prob-label">Fairness-Adjusted Risk Index</div>
                     <div class="prob-value" style="color:{color}">{prob:.2f}</div>
-                    <div class="prob-scale">0.00 — no risk &nbsp;·&nbsp; 1.00 — certain default</div>
-                    <div class="{badge_cls} zone-badge">{label}</div>
+                    <div class="prob-scale">Lower index = lower risk &nbsp;·&nbsp; Higher index = higher risk</div>
+                    <div class="{badge_cls} zone-badge">{zone_label}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -445,13 +674,16 @@ with tab1:
                     "Value": [gender, education, income_type, housing_type]
                 })
                 st.dataframe(demo_df, hide_index=True, use_container_width=True, height=178)
-                ratio = (amt_annuity * 12) / amt_income if amt_income > 0 else 0
-                rc    = "#EF4444" if ratio > 0.5 else "#22C55E" if ratio < 0.3 else "#EAB308"
+                rc = "#EF4444" if dti > 0.5 else "#22C55E" if dti < 0.3 else "#EAB308"
                 st.markdown(f"""
-                <div style="background:#1A1E28;border:1px solid #252A38;border-radius:10px;padding:12px 16px;margin-top:8px;">
-                    <div style="font-size:0.65rem;color:#6B7280;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px">Debt-to-Income Ratio</div>
-                    <div style="font-family:'DM Mono',monospace;font-size:1.5rem;color:{rc};font-weight:500">{ratio:.1%}</div>
-                    <div style="font-size:0.7rem;color:#6B7280;margin-top:2px">Annual repayments vs monthly income</div>
+                <div style="background:#1A1E28;border:1px solid #252A38;border-radius:10px;
+                            padding:12px 16px;margin-top:8px;">
+                    <div style="font-size:0.65rem;color:#6B7280;letter-spacing:1.5px;
+                                text-transform:uppercase;margin-bottom:3px">Debt-to-Income Ratio</div>
+                    <div style="font-family:'DM Mono',monospace;font-size:1.5rem;
+                                color:{rc};font-weight:500">{dti:.1%}</div>
+                    <div style="font-size:0.7rem;color:#6B7280;margin-top:2px">
+                        Annual repayments vs monthly income</div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -474,22 +706,94 @@ with tab1:
             z1, z2, z3 = st.columns(3)
             with z1:
                 st.markdown("""<div class="zone-ref-card">
-                    <div class="zone-ref-range" style="color:#22C55E">0.00 – 0.35</div>
+                    <div class="zone-ref-range" style="color:#22C55E">0.00 – 0.30</div>
                     <div class="zone-ref-label">🟢 Likely to Repay</div>
                     <div class="zone-ref-action" style="color:#86efac">Officer may approve</div>
                 </div>""", unsafe_allow_html=True)
             with z2:
                 st.markdown("""<div class="zone-ref-card">
-                    <div class="zone-ref-range" style="color:#EAB308">0.36 – 0.65</div>
+                    <div class="zone-ref-range" style="color:#EAB308">0.31 – 0.45</div>
                     <div class="zone-ref-label">🟡 Needs Review</div>
                     <div class="zone-ref-action" style="color:#fde68a">Officer must investigate</div>
                 </div>""", unsafe_allow_html=True)
             with z3:
                 st.markdown("""<div class="zone-ref-card">
-                    <div class="zone-ref-range" style="color:#EF4444">0.66 – 1.00</div>
-                    <div class="zone-ref-label">🔴 High Risk</div>
-                    <div class="zone-ref-action" style="color:#fca5a5">Request more info</div>
+                    <div class="zone-ref-range" style="color:#EF4444">0.46 – 1.00</div>
+                    <div class="zone-ref-label">🔴 High Default Risk</div>
+                    <div class="zone-ref-action" style="color:#fca5a5">Request collateral or decline</div>
                 </div>""", unsafe_allow_html=True)
+
+            # ── AI Loan Officer Report ────────────────────────────────────────
+            st.markdown('<div class="section-head" style="margin-top:32px">🤖 AI Loan Officer Assessment</div>', unsafe_allow_html=True)
+
+            groq_key = os.environ.get("GROQ_API_KEY", "")
+            client   = get_groq_client(groq_key)
+
+            if client:
+                with st.spinner("FairCredit Advisor is reviewing this case..."):
+                    try:
+                        report = generate_assessment(client, st.session_state.current_applicant)
+                        st.session_state.advisor_report = report
+                        st.session_state.chat_history   = [
+                            {"role": "user",      "content": f"Assessment for {st.session_state.selected_persona}, score {prob:.2f}"},
+                            {"role": "assistant", "content": report}
+                        ]
+                        st.session_state.assessment_done = True
+                    except Exception as e:
+                        st.error(f"AI Advisor error: {e}")
+            else:
+                st.warning("⚠️ Add your Groq API key in the sidebar to enable the AI Loan Officer report. Get one free at console.groq.com")
+
+    # ── Show AI report and chatbot ────────────────────────────────────────────
+    if st.session_state.assessment_done and st.session_state.advisor_report:
+        st.markdown(f"""
+        <div class="advisor-panel">
+            <div class="advisor-header">
+                <div class="advisor-avatar">🌍</div>
+                <div>
+                    <div class="advisor-name">FairCredit Advisor</div>
+                    <div class="advisor-title">Senior Loan Officer · Financial Inclusion Specialist · Kigali · Powered by Llama 3</div>
+                </div>
+            </div>
+            <div class="advisor-body">{st.session_state.advisor_report.replace(chr(10), '<br>')}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown('<div class="section-head" style="margin-top:24px">💬 Ask the FairCredit Advisor</div>', unsafe_allow_html=True)
+        st.caption("Ask follow-up questions about this case, alternative loan structures, SDG alignment, or fairness implications.")
+
+        if st.session_state.follow_up_messages:
+            st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+            for msg in st.session_state.follow_up_messages:
+                if msg["role"] == "user":
+                    st.markdown(f'<div class="chat-msg-user">🧑 {msg["content"]}</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="chat-msg-ai">🌍 {msg["content"]}</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        with st.form("chat_form", clear_on_submit=True):
+            user_q    = st.text_input("Your question...",
+                placeholder="e.g. What if the farmer enrolls in mobile money first? / How does this connect to SDG 10?")
+            submitted = st.form_submit_button("Ask →", use_container_width=True)
+
+        if submitted and user_q.strip():
+            groq_key = os.environ.get("GROQ_API_KEY", "")
+            client   = get_groq_client(groq_key)
+            if client:
+                with st.spinner("FairCredit Advisor is thinking..."):
+                    try:
+                        answer = chat_with_advisor(
+                            client, user_q,
+                            st.session_state.current_applicant,
+                            st.session_state.chat_history
+                        )
+                        st.session_state.follow_up_messages.append({"role": "user",      "content": user_q})
+                        st.session_state.follow_up_messages.append({"role": "assistant", "content": answer})
+                        st.session_state.chat_history.append({"role": "user",      "content": user_q})
+                        st.session_state.chat_history.append({"role": "assistant", "content": answer})
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab2:
@@ -497,21 +801,22 @@ with tab2:
     <div class="cmu-banner">
         <img class="cmu-img"
              src="https://images.unsplash.com/photo-1607237138185-eedd9c632b0b?w=600&q=80"
-             alt="CMU Africa"
-             onerror="this.style.display='none'"/>
+             alt="CMU Africa" onerror="this.style.display='none'"/>
         <div class="cmu-text">
             <div class="cmu-title">Carnegie Mellon University Africa · Kigali</div>
-            <div class="cmu-sub">Research in AI fairness and financial inclusion for underserved communities
-            across East and Central Africa. This tool demonstrates responsible AI in high-stakes lending.</div>
+            <div class="cmu-sub">Research in AI fairness and financial inclusion for underserved
+            communities across East and Central Africa. This tool demonstrates responsible AI
+            in high-stakes lending decisions.</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
     st.markdown('<div class="section-head">Why Fairness Matters in Credit Scoring</div>', unsafe_allow_html=True)
     st.markdown("""
-    Traditional credit scoring **systematically excludes** millions of Africans who lack formal credit history —
-    not because they are bad borrowers, but because they operate outside the formal financial system.
-    This model uses alternative signals to assess risk more equitably.
+    Traditional credit scoring **systematically excludes** millions of Africans who lack
+    formal credit history — not because they are bad borrowers, but because they operate
+    outside the formal financial system. This model uses alternative signals to assess
+    risk more equitably.
     """)
 
     st.markdown('<div class="section-head">Protected Attributes Monitored</div>', unsafe_allow_html=True)
@@ -529,27 +834,21 @@ with tab2:
 
     st.markdown('<div class="section-head">Alternative Credit Signals — Our African Adaptation</div>', unsafe_allow_html=True)
     st.markdown("""
-    <div style="background:#1A1E28; border:1px solid #252A38; border-left: 4px solid #C8922A;
-                border-radius:12px; padding:20px 24px; margin-bottom:16px; line-height:1.8;">
-        <div style="font-size:0.68rem; font-weight:600; letter-spacing:2px; text-transform:uppercase;
-                    color:#C8922A; margin-bottom:10px">⚠️ Important Demo Note</div>
-        <div style="font-size:0.88rem; color:rgba(237,232,222,0.8)">
+    <div style="background:#1A1E28;border:1px solid #252A38;border-left:4px solid #C8922A;
+                border-radius:12px;padding:20px 24px;margin-bottom:16px;line-height:1.8;">
+        <div style="font-size:0.68rem;font-weight:600;letter-spacing:2px;text-transform:uppercase;
+                    color:#C8922A;margin-bottom:10px">⚠️ Important Demo Note</div>
+        <div style="font-size:0.88rem;color:rgba(237,232,222,0.8)">
             The original Home Credit dataset contains three external credit bureau scores
             (<strong style="color:#E8B84B">EXT_SOURCE_1, EXT_SOURCE_2, EXT_SOURCE_3</strong>)
-            sourced from third-party risk assessment agencies — tools that are largely unavailable
-            to the majority of Africans who operate outside the formal financial system.<br><br>
-            For this demonstration, we have <strong style="color:#E8B84B">relabeled these scores</strong>
-            using African-relevant alternatives that carry the same mathematical weight in the model:
-            <br><br>
-            &nbsp;&nbsp;• <strong style="color:#86efac">No credit history</strong> → score of 0.08 &nbsp;(no external signal at all)<br>
-            &nbsp;&nbsp;• <strong style="color:#86efac">Mobile money user</strong> → score of 0.35 &nbsp;(MTN MoMo, Airtel Money digital footprint)<br>
-            &nbsp;&nbsp;• <strong style="color:#86efac">Has savings account</strong> → score of 0.55 &nbsp;(formal banking engagement)<br>
-            &nbsp;&nbsp;• <strong style="color:#86efac">Has previous loan</strong> &nbsp;&nbsp;→ score of 0.75 &nbsp;(proven repayment history)<br><br>
-            The <strong style="color:#E8B84B">direction is accurate</strong> — someone with no credit history
-            genuinely receives a lower score than someone with a repayment track record.
-            This mirrors what African fintechs like <em>Equity Bank, KCB, and MTN MoMo</em> already
-            do when scoring thin-file borrowers. The relabeling makes the model contextually honest
-            for East Africa without changing any underlying prediction logic.
+            sourced from third-party agencies — largely unavailable to most Africans.<br><br>
+            We relabeled these using African-relevant alternatives:<br><br>
+            &nbsp;&nbsp;• <strong style="color:#86efac">No credit history</strong> → 0.08 — invisible to the system<br>
+            &nbsp;&nbsp;• <strong style="color:#86efac">Mobile money user</strong> → 0.35 — MTN MoMo, Airtel Money<br>
+            &nbsp;&nbsp;• <strong style="color:#86efac">Has savings account</strong> → 0.55 — formal banking engagement<br>
+            &nbsp;&nbsp;• <strong style="color:#86efac">Has previous loan</strong> → 0.75 — proven repayment history<br><br>
+            <strong style="color:#E8B84B">One mobile money signal can be the difference between
+            approval and exclusion. That is SDG 10 in action.</strong>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -565,15 +864,18 @@ with tab2:
 
     st.markdown('<div class="section-head">Persona Risk Profiles</div>', unsafe_allow_html=True)
     st.dataframe(pd.DataFrame({
-        "Persona": ["🏪 Market Vendor","🚗 Boda Boda Rider","👩‍🎓 CMU Graduate",
-                    "👨‍🌾 Smallholder Farmer","👩‍💼 Government Worker","🏠 Single Mother"],
-        "Typical Risk": ["Medium","Medium–High","Low–Medium","High","Low","High"],
+        "Persona": ["👩‍💼 Government Worker","👩‍🎓 CMU Graduate","🏪 Market Vendor",
+                    "🚗 Boda Boda Rider","🏠 Single Mother","👨‍🌾 Smallholder Farmer"],
+        "Credit Signals": ["Has previous loan","Has savings account","Mobile money",
+                           "Mixed","No credit history","No credit history"],
+        "Expected Zone": ["🟢 Low","🟢 Low-Medium","🟡 Medium",
+                          "🟡 Medium-High","🔴 High","🔴 Very High"],
         "Key Factor": [
-            "Informal income, low credit signals",
-            "Young, high loan-to-income ratio",
+            "Stable salary, proven repayment",
             "Thin file but stable employment",
-            "Seasonal income, very low credit signals",
-            "Stable salary, good credit signals",
+            "Informal income, some digital trail",
+            "Young, high debt-to-income ratio",
             "Low income, high dependants",
+            "No income record, no credit signal",
         ]
     }), hide_index=True, use_container_width=True)
