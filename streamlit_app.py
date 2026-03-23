@@ -623,11 +623,24 @@ with tab1:
                     df         = df.reindex(columns=feat_names, fill_value=0)
                     pred       = mdl.predict(df)[0]
                     prob       = get_probability(mdl, df)
-                    result     = {"default_prediction": int(pred), "default_probability": prob}
+                    # Traditional decision: raw threshold on probability (no fairness)
+                    # Traditional bank uses 0.5 cutoff with no fairness consideration
+                    try:
+                        predictors_list = list(mdl.predictors_)
+                        weights_array   = np.array(mdl.weights_)
+                        best_idx        = int(np.argmax(weights_array))
+                        raw_prob        = float(predictors_list[best_idx].predict_proba(df)[0, 1])
+                        # Traditional bank: strict 0.4 threshold, no fairness adjustment
+                        trad_decision   = 1 if raw_prob >= 0.4 else 0
+                    except Exception:
+                        # Fallback: if fairness index is above 0.4 traditional bank denies
+                        trad_decision = 1 if prob >= 0.4 else 0
+                    result     = {"default_prediction": int(pred), "default_probability": prob, "traditional_decision": trad_decision}
 
         if result:
-            prob = result.get("default_probability", 0.0)
-            dti  = (amt_annuity * 12) / amt_income if amt_income > 0 else 0
+            prob          = result.get("default_probability", 0.0)
+            trad_decision = result.get("traditional_decision", int(prob > 0.5))
+            dti           = (amt_annuity * 12) / amt_income if amt_income > 0 else 0
 
             if prob <= 0.30:
                 color, badge_cls, zone_label, action, result_cls = (
@@ -657,7 +670,12 @@ with tab1:
                 "owns_asset": owns_asset, "prob": prob, "zone": zone_label,
             }
 
-            res1, res2 = st.columns([1, 1])
+            # Traditional decision display values
+            trad_color  = "#EF4444" if trad_decision == 1 else "#22C55E"
+            trad_label  = "❌ DENIED" if trad_decision == 1 else "✅ APPROVED"
+            trad_sub    = "Auto-rejected by traditional system" if trad_decision == 1 else "Auto-approved by traditional system"
+
+            res1, res2, res3 = st.columns([1, 1, 1])
             with res1:
                 st.markdown(f"""
                 <div class="result-wrapper {result_cls}">
@@ -669,6 +687,28 @@ with tab1:
                 """, unsafe_allow_html=True)
 
             with res2:
+                st.markdown(f"""
+                <div style="background:#1A1E28;border:1px solid #252A38;border-radius:20px;
+                            padding:28px;margin-top:20px;position:relative;overflow:hidden;">
+                    <div style="position:absolute;top:0;left:0;right:0;height:3px;
+                                background:{'linear-gradient(90deg,#EF4444,#fca5a5)' if trad_decision==1 else 'linear-gradient(90deg,#22C55E,#86efac)'}"></div>
+                    <div style="font-size:0.65rem;font-weight:600;letter-spacing:2px;
+                                text-transform:uppercase;color:#6B7280;margin-bottom:6px">
+                        Traditional Bank Decision</div>
+                    <div style="font-family:'DM Mono',monospace;font-size:3.5rem;font-weight:500;
+                                line-height:1;letter-spacing:-2px;color:{trad_color}">{trad_decision}</div>
+                    <div style="font-size:0.7rem;color:#6B7280;margin-top:4px">
+                        0 = Approved &nbsp;·&nbsp; 1 = Denied (no human review)</div>
+                    <div style="display:inline-flex;align-items:center;gap:8px;border-radius:24px;
+                                padding:7px 16px;font-size:0.82rem;font-weight:600;margin-top:14px;
+                                background:{'rgba(239,68,68,0.1)' if trad_decision==1 else 'rgba(34,197,94,0.1)'};
+                                color:{trad_color};
+                                border:1px solid {'rgba(239,68,68,0.25)' if trad_decision==1 else 'rgba(34,197,94,0.25)'}">{trad_label}</div>
+                    <div style="font-size:0.72rem;color:#6B7280;margin-top:8px">{trad_sub}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with res3:
                 demo_df = pd.DataFrame({
                     "": ["Gender","Education","Employment","Housing"],
                     "Value": [gender, education, income_type, housing_type]
