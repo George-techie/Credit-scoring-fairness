@@ -343,9 +343,19 @@ User question: {user_message}"""
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚙️ Settings")
-    USE_API    = st.checkbox("Use Flask API", value=False)
-    API_URL    = st.text_input("Flask API URL", value="http://localhost:5000")
+    USE_API    = st.checkbox("Use FastAPI Backend", value=False)
+    API_URL    = st.text_input("FastAPI URL", value="http://localhost:8000")
     MODEL_PATH = st.text_input("Model path", value="model/lgb_model.joblib")
+    
+    st.divider()
+    st.markdown("### 📈 MLOps Health")
+    st.markdown("""
+    <div style='font-size:0.82rem;color:#6B7280;line-height:1.6'>
+    Monitor data drift, KS statistics, and continuous retraining experiments on our local MLflow server.<br><br>
+    <a href='http://localhost:5000' target='_blank' style='color:#C8922A;text-decoration:none;font-weight:600;'>↗ Open MLflow Dashboard</a>
+    </div>
+    """, unsafe_allow_html=True)
+    
     st.divider()
     st.markdown("### 🤖 AI Loan Officer")
     GROQ_KEY = st.text_input(
@@ -722,6 +732,30 @@ with tab1:
                     <div class="zone-ref-label">🔴 High Default Risk</div>
                     <div class="zone-ref-action" style="color:#fca5a5">Request collateral or decline</div>
                 </div>""", unsafe_allow_html=True)
+
+            # ── Model Feedback Loop (Ground Truth) ─────────────────────────
+            st.markdown('<div class="section-head" style="margin-top:28px">🔄 Model Monitoring Feedback Loop</div>', unsafe_allow_html=True)
+            st.markdown('<div class="hitl-body" style="margin-bottom:12px;">Simulate resolving this application 6 months later to track model drift and supply ground truth for retraining.</div>', unsafe_allow_html=True)
+            
+            fb1, fb2, _ = st.columns([1, 1, 2])
+            with fb1:
+                if st.button("✅ Simulate: Loan Repaid", key="btn_repaid", use_container_width=True):
+                    payload = {**input_features, **demographic_features, "prediction_prob": float(prob), "ground_truth": 0}
+                    try:
+                        resp = requests.post(f"{API_URL}/feedback", json=payload, timeout=5)
+                        if resp.status_code == 200:
+                            st.success("Feedback logged to local DB for drift monitoring!")
+                    except Exception as e:
+                        st.error(f"Failed to submit feedback (Ensure FastAPI is running): {e}")
+            with fb2:
+                if st.button("❌ Simulate: Loan Defaulted", key="btn_defaulted", use_container_width=True):
+                    payload = {**input_features, **demographic_features, "prediction_prob": float(prob), "ground_truth": 1}
+                    try:
+                        resp = requests.post(f"{API_URL}/feedback", json=payload, timeout=5)
+                        if resp.status_code == 200:
+                            st.success("Feedback logged to local DB for drift monitoring!")
+                    except Exception as e:
+                        st.error(f"Failed to submit feedback (Ensure FastAPI is running): {e}")
 
             # ── AI Loan Officer Report ────────────────────────────────────────
             st.markdown('<div class="section-head" style="margin-top:32px">🤖 AI Loan Officer Assessment</div>', unsafe_allow_html=True)
