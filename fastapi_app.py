@@ -179,27 +179,51 @@ def explain_decision(features: BorrowerFeatures):
             best_idx = int(np.argmax(weights))
             explainer_model = model.predictors_[best_idx]
             
-        # Explainer setup
+        # Translate technical feature names to human-readable labels for the presentation
+        ui_names_map = {
+            "AMT_INCOME_TOTAL": "Total Income",
+            "AMT_CREDIT": "Requested Loan Amount",
+            "AMT_ANNUITY": "Yearly Annuity",
+            "AMT_GOODS_PRICE": "Goods Price",
+            "DAYS_BIRTH": "Estimated Age",
+            "DAYS_EMPLOYED": "Employment Duration",
+            "CNT_CHILDREN": "Child Count",
+            "CNT_FAM_MEMBERS": "Family Size",
+            "EXT_SOURCE_1": "Bureau Credit Score 1",
+            "EXT_SOURCE_2": "Bureau Credit Score 2",
+            "EXT_SOURCE_3": "Bureau Credit Score 3",
+            "FLAG_OWN_CAR": "Owns Car"
+        }
+        
+        # Rename features structurally before they touch SHAP
+        translated_cols = [ui_names_map.get(c, c) for c in df.columns]
+        
+        # Explainer setup: Pass pure numpy array to prevent pandas column name overriding
         explainer = shap.TreeExplainer(explainer_model)
-        shap_values = explainer(df)
+        shap_values = explainer(df.values)
         
         # Scikit-learn wrappers (LGBMClassifier) natively return shape (N, M, 2) in TreeExplainer
-        # We want to extract the local row explanation array for the Positive default class (index 1)
+        # Extract the local row explanation array for the Positive default class (index 1)
         if len(shap_values.shape) == 3:
             sv = shap_values[:, :, 1][0]
         else:
             sv = shap_values[0]
+            
+        # Aggressively enforce our translated features list back into the raw Explanation object
+        sv.feature_names = np.array(translated_cols)
 
         # Draw plot safely in background Agg
         plt.clf() 
+        plt.rcParams.update({'font.weight': 'normal', 'font.size': 12}) # Boost font size for monitors
         shap.plots.waterfall(sv, max_display=10, show=False)
         fig = plt.gcf()
-        fig.set_size_inches(8, 5) # Streamlined size for UI
+        fig.set_size_inches(10, 6.5) # Wider resolution to prevent overlapping names
         
-        # Save to memory buffer
+        # Save to memory buffer 
         buf = io.BytesIO()
         plt.tight_layout()
-        plt.savefig(buf, format="png", dpi=120, bbox_inches='tight', transparent=True)
+        # Enforce solid white background (removes transparent blur over Dark Mode Streamlit UI)
+        plt.savefig(buf, format="png", dpi=250, bbox_inches='tight', facecolor='white', transparent=False)
         plt.close(fig)
         buf.seek(0)
         

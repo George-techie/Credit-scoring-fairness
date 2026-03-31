@@ -88,27 +88,32 @@ The Streamlit UI features a dedicated **MLOps Control Center** tab that acts as 
 - **Visual Health Dashboards**: Live tracking data is parsed into native Streamlit interactive line charts visualizing the two core MLOps benchmarks: (1) **Data Concept Drift** via tracking the Kolmogorov-Smirnov statistical p-value, and (2) **Continuous Retraining Performance** via tracking the ROC-AUC score across subsequent fine-tuning iterations.
 - **Interactive Subprocessor Commands**: Administrators can seamlessly execute the background Python pipelines (`monitor_drift.py` and `retrain_pipeline.py`) by clicking native UI buttons. Instead of blocking the Streamlit thread or requiring manual terminal commands, Streamlit safely encapsulates these scripts via `subprocess.run()`, catches their outputs, updates the MLflow charts natively, and immediately hot-reloads the visualizations upon success.
 
-## Presentation & Concept Drift Simulation
+## Presentation & Interactive Features
 
-To effectively demonstrate the robustness of the MLOps pipeline, we included several dedicated presentation tools:
+To effectively demonstrate the robustness of the system to university panels or banking executives, this project includes several highly polished presentation tools:
 
 ### 1. Explainable AI (SHAP Waterfall)
-The system leverages an active SHAP (SHapley Additive exPlanations) engine natively inside the FastAPI backend. During the Streamlit Assessment phase, FastAPI computationally extracts the exact feature contribution values from the Fairlearn ensemble, generates an in-memory `matplotlib` Waterfall Graph, and securely streams it back to Streamlit as a Base64 image payload. This physically shows your audience *why* the AI made the exact decision it did.
+The system leverages an active SHAP (SHapley Additive exPlanations) engine natively inside the FastAPI backend. During the Streamlit Assessment phase, FastAPI computationally extracts the exact feature contribution values from the Fairlearn ensemble, generates an in-memory `matplotlib` Waterfall Graph, translates the technical data science variables into plain English, and securely streams it back to Streamlit as a Base64 image payload. This physically shows your audience *why* the AI made the exact decision it did.
 
-### 2. Deep MLOps History Builder
-To give your MLflow Line charts an incredibly persuasive and realistic historical training curve, you can aggressively populate the background logs with 8 consecutive continuous-integration cycles:
+### 2. Generative AI Chatbot (Groq)
+The Streamlit UI features a dedicated AI Assistant powered by Groq. This integrates a lightning-fast Large Language Model (LLM) loaded with domain-specific knowledge regarding credit scoring, fairness metrics, and macroeconomics. It allows loan officers to ask natural language questions regarding application assessments without ever leaving the secure platform.
 
+### 3. Instant Demo Seeder (`seed_demo.py`) 🚀 Recommended for Live Demos
+When presenting live, you want your MLOps control center to look populated and professional instantly. Connect your terminal and run:
+```bash
+python seed_demo.py
+```
+This script uses the `MlflowClient` API to aggressively forge 15 days of perfectly orchestrated historical metrics (both stable and drifting) directly into your MLflow backend in under 2 seconds. This guarantees your Streamlit dashboard displays a beautiful, predictable narrative arc reliably every single time.
+
+### 4. Deep MLOps History Builder (`simulate_mlops_history.py`)
+To mathematically prove the Integration Pipeline works end-to-end, you can run a heavy script that loops through organic data generation, drift detection, and automated LightGBM retraining 15 consecutive times. This script performs real Machine Learning math to calculate actual drift against raw databases. *(Note: Takes ~3 minutes to run).*
 ```bash
 python simulate_mlops_history.py
 ```
-*Note: This script will automatically hallucinate applicant records, detect drift 8 separate times, and mathematically fine-tune your LightGBM model 8 distinct iterations to generate beautiful line charts.*
 
-### 3. Live Time Travel Simulator
-
-You can forcefully simulate live "Concept Drift" during your presentation by pumping 120 severely stressed applicant records directly into the backend feedback database:
-
+### 5. Live Time Travel Simulator (`simulate_time_travel.py`)
+You can forcefully simulate literal "Concept Drift" during your presentation by pumping 120 severely stressed synthetic applicant records directly into the SQLite feedback database:
 ```bash
 python simulate_time_travel.py
 ```
-
-Once executed, navigate to the **MLOps Control Center** in Streamlit and click **"Run Drift Monitor Batch Scan"**. The MLflow dashboard will instantly update, and the dynamic line chart will visually alert the user that a severe statistical target drift (P-value < 0.05) has occurred, effectively prompting an immediate Model Retraining phase.
+Once executed, navigate to the **MLOps Control Center** in Streamlit and click **"Run Drift Monitor Batch Scan"**. The MLflow dashboard will instantly update, alerting the user to a severe statistical target drift (P-value < 0.05), effectively prompting an immediate Model Retraining phase.

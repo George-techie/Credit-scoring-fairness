@@ -1000,10 +1000,27 @@ with tab3:
         if not df_drift.empty:
             st.line_chart(df_drift, color="#EAB308", height=200)
             latest_p = df_drift["value"].iloc[-1]
+            stability_pct = latest_p * 100
+            baseline_stability = 75.0
+            drift_deviation = stability_pct - baseline_stability
+            
             if latest_p < 0.05:
-                st.error(f"⚠️ Alert: Market Shift Detected! The AI's knowledge base is degrading. (Stability Score: {latest_p:.4f})")
+                status_color = "🔴"
+                status_text = "**Critical Shift**: Market data drifting away from system baseline."
+            elif latest_p < 0.20:
+                status_color = "🟡"
+                status_text = "**Warning**: Market data showing early signs of shifting."
             else:
-                st.success(f"✅ Data distribution is stable. No retraining required. (Stability Score: {latest_p:.4f})")
+                status_color = "🟢"
+                status_text = "**Stable**: Market data correctly matches training baseline."
+                
+            st.metric(
+                label="Data Stability Index (Baseline: 75.0%)",
+                value=f"{stability_pct:.1f}%",
+                delta=f"{drift_deviation:+.1f}% deviation",
+                delta_color="normal"
+            )
+            st.markdown(f"<div style='margin-top: -10px; font-size:14px; font-weight: 500;'>Status: {status_color} {status_text}</div>", unsafe_allow_html=True)
         else:
             st.info("No drift metrics available. Run Drift Monitor first.")
         
@@ -1027,7 +1044,24 @@ with tab3:
         if not df_auc.empty:
             st.line_chart(df_auc, color="#22C55E", height=200)
             current_auc = df_auc["value"].iloc[-1]
-            st.metric("Latest System Accuracy Score", f"{current_auc:.4f}")
+            baseline_auc = 0.7642
+            deviation_pct = ((current_auc - baseline_auc) / baseline_auc) * 100
+            
+            if deviation_pct < -5.0:
+                health_status = "🔴 High Degradation (Emergency review required)"
+            elif deviation_pct < -1.0:
+                health_status = "🟡 Medium Degradation (Monitor model closely)"
+            elif deviation_pct > 2.0:
+                health_status = "🟢 High Improvement (New baseline achieved)"
+            else:
+                health_status = "🟢 Stable (Optimal system performance)"
+                
+            st.metric(
+                label="Latest System Accuracy (Baseline: 0.7642)",
+                value=f"{current_auc:.4f}",
+                delta=f"{deviation_pct:+.2f}% deviation"
+            )
+            st.markdown(f"<div style='margin-top: -10px; font-size:14px; font-weight: 500;'>Status: {health_status}</div>", unsafe_allow_html=True)
         else:
             st.info("No retraining metrics available.")
             
