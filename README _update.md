@@ -211,7 +211,7 @@ Together they validate both learning quality and operational utility.
 ### Full model comparison
 
 | Model | AUC-ROC | Recall | Accuracy |
-|---|---|---|---|---|
+|---|---|---|---|
 | Logistic Regression | 0.7503 | 0.6820 | 0.6878 |
 | Random Forest | 0.7449 | 0.5458 | 0.7742  |
 | XGBoost | **0.7649** | 0.6298 | 0.7466 |
