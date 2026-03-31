@@ -24,6 +24,7 @@ Credit-scoring-fairness/
 ├── start_services.py               # Single entrypoint launcher for all 3 web systems
 ├── monitor_drift.py                # Kolmogorov-Smirnov (KS) test for data drift
 ├── retrain_pipeline.py             # Automates fine-tuning LightGBM with MLflow metrics
+├── simulate_time_travel.py         # Presentation macro script to simulate Concept Drift
 ├── requirements.txt                # Frontend dependencies
 ├── requirements_backend.txt        # Backend and MLOps dependencies
 └── model/
@@ -67,49 +68,47 @@ This single command spins up:
 
 # Backend & MLOps Documentation
 
-This section details the continuous training pipeline and MLOps backend for the Fairness-Aware Credit Scoring system. The architecture is designed for local development and tracking, utilizing standard offline tools rather than specific cloud provider SDKs.
+This project goes beyond a static model by implementing a fully local, continuous training MLOps pipeline.
 
 ## System Architecture
 
-The backend consists of three core components:
+The backend consists of four core components:
 
 1. **FastAPI Serving System (`fastapi_app.py`)**: Hosts the active LightGBM model for real-time predictions and provides a `/feedback` endpoint to securely collect downstream ground-truth labels directly from the Streamlit UI.
 2. **Drift Monitoring (`monitor_drift.py`)**: Compares newly collected feedback data against a baseline training distribution using Kolmogorov-Smirnov (KS) tests, identifying feature and output probability drift.
 3. **Continuous Retraining Pipeline (`retrain_pipeline.py`)**: Extracts accumulated feedback from the local database and fine-tunes the existing gradient boosting tree parameters without catastrophic forgetting.
+4. **Interactive MLOps Dashboard**: Built natively into Streamlit (`tab3`), providing system architects with a real-time health-check of the active model via MLflow.
 
-All monitoring metrics, hyperparameters, and newly saved model artifacts are seamlessly tracked using a local **MLflow** instance.
+All monitoring metrics, hyperparameters, and newly saved model artifacts are seamlessly tracked using local **MLflow**.
 
-## Essential Artifacts
+## MLOps Control Center (Streamlit Native)
 
-Before starting the system, ensure the following artifacts are placed in this directory:
-- `model/lgb_model.joblib`: Your initial trained LightGBM model (either an active `lgb.Booster` or the Scikit-Learn Wrapper `LGBMClassifier`).
-- `baseline_data.csv`: A sample or complete set of the dataset you used to originally train the model. The drift monitor needs this to compare against new incoming feedback.
+The Streamlit UI features a dedicated **MLOps Control Center** tab that acts as a central hub for pipeline management. It leverages:
+- **Dynamic MLflow Connection**: The tab utilizes the `mlflow` Python client API to securely query the background tracking server (`localhost:5000`) and fetch the latest experiment histories (timestamps, metrics) directly into the frontend interface.
+- **Visual Health Dashboards**: Live tracking data is parsed into native Streamlit interactive line charts visualizing the two core MLOps benchmarks: (1) **Data Concept Drift** via tracking the Kolmogorov-Smirnov statistical p-value, and (2) **Continuous Retraining Performance** via tracking the ROC-AUC score across subsequent fine-tuning iterations.
+- **Interactive Subprocessor Commands**: Administrators can seamlessly execute the background Python pipelines (`monitor_drift.py` and `retrain_pipeline.py`) by clicking native UI buttons. Instead of blocking the Streamlit thread or requiring manual terminal commands, Streamlit safely encapsulates these scripts via `subprocess.run()`, catches their outputs, updates the MLflow charts natively, and immediately hot-reloads the visualizations upon success.
 
-## Advanced Usage & Execution
+## Presentation & Concept Drift Simulation
 
-While `python start_services.py` handles the active web applications effortlessly, you can evaluate model degradation and trigger the fine-tuning pipelines securely via standalone scripts:
+To effectively demonstrate the robustness of the MLOps pipeline, we included several dedicated presentation tools:
 
-### 1. Run Drift Monitoring
+### 1. Explainable AI (SHAP Waterfall)
+The system leverages an active SHAP (SHapley Additive exPlanations) engine natively inside the FastAPI backend. During the Streamlit Assessment phase, FastAPI computationally extracts the exact feature contribution values from the Fairlearn ensemble, generates an in-memory `matplotlib` Waterfall Graph, and securely streams it back to Streamlit as a Base64 image payload. This physically shows your audience *why* the AI made the exact decision it did.
 
-Whenever you want to check if the new data arriving in your feedback database significantly drifts from your baseline distributions, execute the script:
-
-```bash
-python monitor_drift.py
-```
-
-The script runs a KS-test on features and logs the p-values and test statistics directly to MLflow.
-
-### 2. Trigger Incremental Model Retraining
-
-If significant drift is detected or a large batch of feedback has been successfully collected via Streamlit's "Simulate Outcome", you can fine-tune the model:
+### 2. Deep MLOps History Builder
+To give your MLflow Line charts an incredibly persuasive and realistic historical training curve, you can aggressively populate the background logs with 8 consecutive continuous-integration cycles:
 
 ```bash
-python retrain_pipeline.py
+python simulate_mlops_history.py
+```
+*Note: This script will automatically hallucinate applicant records, detect drift 8 separate times, and mathematically fine-tune your LightGBM model 8 distinct iterations to generate beautiful line charts.*
+
+### 3. Live Time Travel Simulator
+
+You can forcefully simulate live "Concept Drift" during your presentation by pumping 120 severely stressed applicant records directly into the backend feedback database:
+
+```bash
+python simulate_time_travel.py
 ```
 
-This will:
-- Load data from the SQLite feedback database (populated directly by Streamlit).
-- Check if enough robust samples exist.
-- Load `model/lgb_model.joblib`.
-- Perform additional boosting iterations on the new data without catastrophic forgetting of the initial weights.
-- Store the new model locally and log evaluation metrics to MLflow.
+Once executed, navigate to the **MLOps Control Center** in Streamlit and click **"Run Drift Monitor Batch Scan"**. The MLflow dashboard will instantly update, and the dynamic line chart will visually alert the user that a severe statistical target drift (P-value < 0.05) has occurred, effectively prompting an immediate Model Retraining phase.

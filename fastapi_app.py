@@ -1,3 +1,10 @@
+import base64
+import io
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import shap
+import numpy as np
 import joblib
 import sqlite3
 import pandas as pd
@@ -144,3 +151,60 @@ def receive_feedback(feedback: FeedbackData):
         return {"status": "success", "message": "Feedback recorded successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to record feedback: {str(e)}")
+
+
+@app.post("/explain")
+def explain_decision(features: BorrowerFeatures):
+    """
+    Computes exact feature contributions using SHAP TreeExplainer, plots a Waterfall chart,
+    and returns it natively as a base64 encoded PNG image directly to Streamlit.
+    """
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model is currently unavailable.")
+    
+    df = pd.DataFrame([features.dict()])
+    
+    # Isolate training features
+    if feature_names is not None:
+        df = df.reindex(columns=feature_names, fill_value=0)
+    else:
+        cols_to_drop = ['CODE_GENDER', 'NAME_EDUCATION_TYPE', 'NAME_INCOME_TYPE', 'NAME_HOUSING_TYPE']
+        df = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
+    
+    try:
+        # Extract the dominant Tree predictor if fairness ensemble is used
+        explainer_model = model
+        if hasattr(model, 'predictors_') and hasattr(model, 'weights_'):
+            weights = np.array(model.weights_)
+            best_idx = int(np.argmax(weights))
+            explainer_model = model.predictors_[best_idx]
+            
+        # Explainer setup
+        explainer = shap.TreeExplainer(explainer_model)
+        shap_values = explainer(df)
+        
+        # Scikit-learn wrappers (LGBMClassifier) natively return shape (N, M, 2) in TreeExplainer
+        # We want to extract the local row explanation array for the Positive default class (index 1)
+        if len(shap_values.shape) == 3:
+            sv = shap_values[:, :, 1][0]
+        else:
+            sv = shap_values[0]
+
+        # Draw plot safely in background Agg
+        plt.clf() 
+        shap.plots.waterfall(sv, max_display=10, show=False)
+        fig = plt.gcf()
+        fig.set_size_inches(8, 5) # Streamlined size for UI
+        
+        # Save to memory buffer
+        buf = io.BytesIO()
+        plt.tight_layout()
+        plt.savefig(buf, format="png", dpi=120, bbox_inches='tight', transparent=True)
+        plt.close(fig)
+        buf.seek(0)
+        
+        img_str = base64.b64encode(buf.read()).decode('utf-8')
+        return {"status": "success", "shap_base64": img_str}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Explanation generation error: {str(e)}")

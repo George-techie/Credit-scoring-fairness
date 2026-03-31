@@ -343,7 +343,7 @@ User question: {user_message}"""
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚙️ Settings")
-    USE_API    = st.checkbox("Use FastAPI Backend", value=False)
+    USE_API    = st.checkbox("Use FastAPI Backend", value=True)
     API_URL    = st.text_input("FastAPI URL", value="http://localhost:8000")
     MODEL_PATH = st.text_input("Model path", value="model/lgb_model.joblib")
     
@@ -403,7 +403,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab1, tab2 = st.tabs(["  🧑‍💼  Applicant Assessment  ", "  ⚖️  Fairness & SDG Context  "])
+tab1, tab2, tab3 = st.tabs(["  🧑‍💼  Applicant Assessment  ", "  ⚖️  Fairness & SDG Context  ", "  📈  MLOps Control Center  "])
 
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
@@ -541,10 +541,23 @@ with tab1:
         st.markdown('<div class="form-card-title">💰 Financial Information</div>', unsafe_allow_html=True)
         fc1, fc2 = st.columns(2)
         with fc1:
-            amt_income      = st.number_input("Monthly Income (RWF)", min_value=0.0, value=float(p["income"]), step=5000.0)
-            amt_credit      = st.number_input("Loan Amount (RWF)", min_value=0.0, value=float(p["credit"]), step=10000.0)
-            amt_annuity     = st.number_input("Monthly Repayment (RWF)", min_value=0.0, value=float(p["annuity"]), step=1000.0)
-            amt_goods_price = st.number_input("Purpose / Item Value (RWF)", min_value=0.0, value=float(p["goods"]), step=5000.0)
+            def parse_currency(val_str, default_val):
+                try:
+                    return float(str(val_str).replace(",", "").replace(" ", "").strip())
+                except ValueError:
+                    return float(default_val)
+
+            _inc = st.text_input("Monthly Income (RWF)", value=f"{int(p['income']):,}")
+            amt_income = parse_currency(_inc, p['income'])
+
+            _cred = st.text_input("Loan Amount (RWF)", value=f"{int(p['credit']):,}")
+            amt_credit = parse_currency(_cred, p['credit'])
+
+            _ann = st.text_input("Monthly Repayment (RWF)", value=f"{int(p['annuity']):,}")
+            amt_annuity = parse_currency(_ann, p['annuity'])
+
+            _goods = st.text_input("Purpose / Item Value (RWF)", value=f"{int(p['goods']):,}")
+            amt_goods_price = parse_currency(_goods, p['goods'])
         with fc2:
             age_years      = st.number_input("Age (years)", min_value=18, max_value=70, value=p["age"])
             years_employed = st.number_input("Years in Current Work", min_value=0, max_value=40, value=p["employed"])
@@ -733,6 +746,24 @@ with tab1:
                     <div class="zone-ref-action" style="color:#fca5a5">Request collateral or decline</div>
                 </div>""", unsafe_allow_html=True)
 
+            # ── Explainable AI (SHAP Waterfall) ──────────────────────────────
+            if USE_API:
+                st.markdown('<div class="section-head" style="margin-top:28px">🧠 Explainable AI (SHAP Waterfall)</div>', unsafe_allow_html=True)
+                with st.spinner("Generating exact SHAP feature contributions via FastAPI..."):
+                    try:
+                        resp_exp = requests.post(f"{API_URL}/explain", json={**input_features, **demographic_features}, timeout=8)
+                        if resp_exp.status_code == 200:
+                            img_b64 = resp_exp.json().get("shap_base64", "")
+                            if img_b64:
+                                # Render the base64 png payload securely inside a stylistic container
+                                st.markdown("""<div style="background:#13161E; border:1px solid #252A38; border-radius:12px; padding:15px; margin-top:10px;">""", unsafe_allow_html=True)
+                                st.image(f"data:image/png;base64,{img_b64}", use_container_width=True)
+                                st.markdown("</div>", unsafe_allow_html=True)
+                        else:
+                            st.error(f"SHAP API error {resp_exp.status_code}: {resp_exp.text}")
+                    except Exception as e:
+                        st.warning(f"Could not generate SHAP explanation: {e}")
+
             # ── Model Feedback Loop (Ground Truth) ─────────────────────────
             st.markdown('<div class="section-head" style="margin-top:28px">🔄 Model Monitoring Feedback Loop</div>', unsafe_allow_html=True)
             st.markdown('<div class="hitl-body" style="margin-bottom:12px;">Simulate resolving this application 6 months later to track model drift and supply ground truth for retraining.</div>', unsafe_allow_html=True)
@@ -913,3 +944,105 @@ with tab2:
             "No income record, no credit signal",
         ]
     }), hide_index=True, use_container_width=True)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab3:
+    st.markdown('<div class="section-head">🚀 MLOps Control Center</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background:#1A1E28;border:1px solid #252A38;border-left:4px solid #22C55E;
+                border-radius:12px;padding:18px 22px;margin-bottom:20px;">
+        <span style="color:#86efac;font-weight:600;font-size:0.9rem;">System Architect View</span><br>
+        <span style="color:#C8D0DC;font-size:0.85rem;line-height:1.6;">
+        Monitor live data concept drift and trigger the continuous retraining pipeline directly from this application. 
+        All metrics below are pulled in real-time from the local MLflow tracking server.
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    import mlflow
+    from mlflow.tracking import MlflowClient
+    import subprocess
+    import sys
+    import time
+    
+    MLFLOW_URI = "http://localhost:5000"
+    mlflow.set_tracking_uri(MLFLOW_URI)
+    
+    try:
+        client = MlflowClient(tracking_uri=MLFLOW_URI)
+    except Exception as e:
+        st.error(f"Could not connect to MLflow: {e}")
+        client = None
+
+    def get_experiment_metrics(exp_name, metric_name):
+        if not client: return pd.DataFrame()
+        exp = client.get_experiment_by_name(exp_name)
+        if not exp: return pd.DataFrame()
+        
+        runs = client.search_runs(exp.experiment_id, order_by=["start_time ASC"])
+        data = []
+        for r in runs:
+            if metric_name in r.data.metrics:
+                data.append({"time": r.info.start_time, "value": r.data.metrics[metric_name]})
+        
+        if not data: return pd.DataFrame()
+        df = pd.DataFrame(data)
+        df["time"] = pd.to_datetime(df["time"], unit="ms")
+        df.set_index("time", inplace=True)
+        return df
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown('<div class="form-card-title">📉 System Health: Live Data Drift Detection</div>', unsafe_allow_html=True)
+        st.caption("Monitoring real-world data distributions against the AI's training baseline. Drops below the stability line indicate macroeconomic shifts.")
+        
+        df_drift = get_experiment_metrics("Credit_Scoring_Drift_Monitoring", "prediction_prob_p_value")
+        if not df_drift.empty:
+            st.line_chart(df_drift, color="#EAB308", height=200)
+            latest_p = df_drift["value"].iloc[-1]
+            if latest_p < 0.05:
+                st.error(f"⚠️ Alert: Market Shift Detected! The AI's knowledge base is degrading. (Stability Score: {latest_p:.4f})")
+            else:
+                st.success(f"✅ Data distribution is stable. No retraining required. (Stability Score: {latest_p:.4f})")
+        else:
+            st.info("No drift metrics available. Run Drift Monitor first.")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔍 Run Drift Monitor Batch Scan", use_container_width=True):
+            with st.spinner("Analyzing feedback database for statistical drift..."):
+                run_env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+                res = subprocess.run([sys.executable, "monitor_drift.py"], capture_output=True, text=True, env=run_env)
+                if res.returncode == 0:
+                    st.toast("Drift monitoring complete! MLflow dashboard updated.")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error(f"Error: {res.stderr}")
+
+    with col2:
+        st.markdown('<div class="form-card-title">📈 AI Intelligence: Automated Retraining</div>', unsafe_allow_html=True)
+        st.caption("Tracking the model's predictive accuracy capability as it continuously learns from incoming loan manager feedback.")
+        
+        df_auc = get_experiment_metrics("Credit_Scoring_Retraining", "roc_auc")
+        if not df_auc.empty:
+            st.line_chart(df_auc, color="#22C55E", height=200)
+            current_auc = df_auc["value"].iloc[-1]
+            st.metric("Latest System Accuracy Score", f"{current_auc:.4f}")
+        else:
+            st.info("No retraining metrics available.")
+            
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🚀 Trigger Model Retraining Pipeline", type="primary", use_container_width=True):
+            with st.spinner("Fine-tuning LightGBM on new feedback data. This may take a moment..."):
+                run_env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+                res = subprocess.run([sys.executable, "retrain_pipeline.py"], capture_output=True, text=True, env=run_env)
+                if res.returncode == 0:
+                    out_text = str(res.stdout) + "\n" + str(res.stderr)
+                    if "Not enough data" in out_text:
+                        st.warning("Skipped: Not enough new feedback samples to safely retrain right now.")
+                    else:
+                        st.toast("Retraining pipeline successfully completed! New model saved.")
+                        time.sleep(1)
+                        st.rerun()
+                else:
+                    st.error(f"Error during retraining: {res.stderr}")

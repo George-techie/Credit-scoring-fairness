@@ -4,7 +4,7 @@ import time
 
 def main():
     print("="*60)
-    print("🚀 Starting FairCredit Africa Services...")
+    print("[ STARTING ] FairCredit Africa Services...")
     print("="*60)
     
     # Run all as child processes pointing to the same venv
@@ -33,7 +33,7 @@ def main():
         )
         
         print("\n" + "="*60)
-        print("✅ All services are running!")
+        print("[ SUCCESS ] All services are running!")
         print("   - Streamlit Application: http://localhost:8501")
         print("   - FastAPI Swagger Docs:  http://localhost:8000/docs")
         print("   - MLflow Dashboard:      http://localhost:5000")
@@ -54,7 +54,7 @@ def main():
                 break
 
     except KeyboardInterrupt:
-        print("\n🛑 Shutting down all services gracefully...")
+        print("\n[ STOPPING ] Shutting down all services gracefully...")
     
     finally:
         # Guarantee cleanup

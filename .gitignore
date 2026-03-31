@@ -2,3 +2,36 @@ model/
 venv/ 
 __pycache__/ 
 *.pyc   git add .
+
+
+# --- Project Specific (From your git status) ---
+# Databases
+*.db
+feedback.db
+mlflow.db
+
+# Model Artifacts
+*.joblib
+mlartifacts/
+
+# Data
+*.csv
+baseline_data.csv
+
+# --- Python Standard ---
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+ENV/
+
+# --- IDEs ---
+.vscode/
+.idea/
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
