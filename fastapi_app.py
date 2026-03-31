@@ -1,0 +1,234 @@
+import base64
+import io
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import shap
+import numpy as np
+import joblib
+import sqlite3
+import pandas as pd
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import os
+
+# Database for feedback
+DB_NAME = "feedback.db"
+MODEL_PATH = "model/lgb_model.joblib"
+
+# Global model variable
+model = None
+feature_names = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global model, feature_names
+    # Load model on startup
+    if os.path.exists(MODEL_PATH):
+        try:
+            artefact = joblib.load(MODEL_PATH)
+            if isinstance(artefact, dict) and 'model' in artefact:
+                model = artefact['model']
+                feature_names = artefact.get('feature_names', None)
+            else:
+                model = artefact
+            print(f"Model loaded successfully from {MODEL_PATH}")
+        except Exception as e:
+            print(f"Failed to load model: {e}")
+    else:
+        print(f"Warning: Model file not found at {MODEL_PATH}")
+
+    # Initialize SQLite DB for feedback
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS feedback_v2 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            AMT_INCOME_TOTAL REAL,
+            AMT_CREDIT REAL,
+            AMT_ANNUITY REAL,
+            AMT_GOODS_PRICE REAL,
+            DAYS_BIRTH REAL,
+            DAYS_EMPLOYED REAL,
+            CNT_CHILDREN REAL,
+            CNT_FAM_MEMBERS REAL,
+            EXT_SOURCE_1 REAL,
+            EXT_SOURCE_2 REAL,
+            EXT_SOURCE_3 REAL,
+            FLAG_OWN_CAR INTEGER,
+            CODE_GENDER TEXT,
+            NAME_EDUCATION_TYPE TEXT,
+            NAME_INCOME_TYPE TEXT,
+            NAME_HOUSING_TYPE TEXT,
+            prediction_prob REAL,
+            ground_truth INTEGER,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
+    yield
+    print("Shutting down model serving application...")
+
+app = FastAPI(title="Credit Scoring API", lifespan=lifespan)
+
+class BorrowerFeatures(BaseModel):
+    AMT_INCOME_TOTAL: float
+    AMT_CREDIT: float
+    AMT_ANNUITY: float
+    AMT_GOODS_PRICE: float
+    DAYS_BIRTH: float
+    DAYS_EMPLOYED: float
+    CNT_CHILDREN: float
+    CNT_FAM_MEMBERS: float
+    EXT_SOURCE_1: float
+    EXT_SOURCE_2: float
+    EXT_SOURCE_3: float
+    FLAG_OWN_CAR: int
+    CODE_GENDER: str
+    NAME_EDUCATION_TYPE: str
+    NAME_INCOME_TYPE: str
+    NAME_HOUSING_TYPE: str
+    
+class FeedbackData(BorrowerFeatures):
+    prediction_prob: float
+    ground_truth: int  # 0 or 1
+
+@app.post("/predict")
+def predict_default(features: BorrowerFeatures):
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model is currently unavailable.")
+    
+    # Convert input to DataFrame (Note: Ensure the columns match your model's expected input features)
+    df = pd.DataFrame([features.dict()])
+    
+    # Isolate training features mathematically from demographic tracking strings (e.g. CODE_GENDER) 
+    if feature_names is not None:
+        df = df.reindex(columns=feature_names, fill_value=0)
+    else:
+        cols_to_drop = ['CODE_GENDER', 'NAME_EDUCATION_TYPE', 'NAME_INCOME_TYPE', 'NAME_HOUSING_TYPE']
+        df = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
+    
+    # Predict probability logically for fairness-constrained ensembles
+    try:
+        import numpy as np
+        # Fairlearn / Fairness-constrained models use multiple predictors and weights
+        if hasattr(model, 'predictors_') and hasattr(model, 'weights_'):
+            weights = np.array(model.weights_)
+            weights = weights / weights.sum()
+            prob = 0.0
+            for w, predictor in zip(weights, model.predictors_):
+                if hasattr(predictor, 'predict_proba'):
+                    prob += w * predictor.predict_proba(df)[0, 1]
+                else:
+                    prob += w * float(predictor.predict(df)[0])
+        elif hasattr(model, 'predict_proba'):
+            prob = model.predict_proba(df)[0][1]
+        else:
+            prob = model.predict(df)[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+        
+    prediction = int(prob > 0.5)
+    return {
+        "default_probability": float(prob),
+        "default_prediction": prediction
+    }
+
+@app.post("/feedback")
+def receive_feedback(feedback: FeedbackData):
+    """
+    Simulates receiving the ground truth data (e.g. loan defaulted months later).
+    Appends this data to the local SQLite database.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        # Use pandas to quickly append row, excluding the auto-increment id and timestamp (let DB handle that implicitly via schema)
+        df_to_save = pd.DataFrame([feedback.dict()])
+        df_to_save.to_sql("feedback_v2", conn, if_exists="append", index=False)
+        conn.close()
+        return {"status": "success", "message": "Feedback recorded successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to record feedback: {str(e)}")
+
+
+@app.post("/explain")
+def explain_decision(features: BorrowerFeatures):
+    """
+    Computes exact feature contributions using SHAP TreeExplainer, plots a Waterfall chart,
+    and returns it natively as a base64 encoded PNG image directly to Streamlit.
+    """
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model is currently unavailable.")
+    
+    df = pd.DataFrame([features.dict()])
+    
+    # Isolate training features
+    if feature_names is not None:
+        df = df.reindex(columns=feature_names, fill_value=0)
+    else:
+        cols_to_drop = ['CODE_GENDER', 'NAME_EDUCATION_TYPE', 'NAME_INCOME_TYPE', 'NAME_HOUSING_TYPE']
+        df = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
+    
+    try:
+        # Extract the dominant Tree predictor if fairness ensemble is used
+        explainer_model = model
+        if hasattr(model, 'predictors_') and hasattr(model, 'weights_'):
+            weights = np.array(model.weights_)
+            best_idx = int(np.argmax(weights))
+            explainer_model = model.predictors_[best_idx]
+            
+        # Translate technical feature names to human-readable labels for the presentation
+        ui_names_map = {
+            "AMT_INCOME_TOTAL": "Total Income",
+            "AMT_CREDIT": "Requested Loan Amount",
+            "AMT_ANNUITY": "Yearly Annuity",
+            "AMT_GOODS_PRICE": "Goods Price",
+            "DAYS_BIRTH": "Estimated Age",
+            "DAYS_EMPLOYED": "Employment Duration",
+            "CNT_CHILDREN": "Child Count",
+            "CNT_FAM_MEMBERS": "Family Size",
+            "EXT_SOURCE_1": "Bureau Credit Score 1",
+            "EXT_SOURCE_2": "Bureau Credit Score 2",
+            "EXT_SOURCE_3": "Bureau Credit Score 3",
+            "FLAG_OWN_CAR": "Owns Car"
+        }
+        
+        # Rename features structurally before they touch SHAP
+        translated_cols = [ui_names_map.get(c, c) for c in df.columns]
+        
+        # Explainer setup: Pass pure numpy array to prevent pandas column name overriding
+        explainer = shap.TreeExplainer(explainer_model)
+        shap_values = explainer(df.values)
+        
+        # Scikit-learn wrappers (LGBMClassifier) natively return shape (N, M, 2) in TreeExplainer
+        # Extract the local row explanation array for the Positive default class (index 1)
+        if len(shap_values.shape) == 3:
+            sv = shap_values[:, :, 1][0]
+        else:
+            sv = shap_values[0]
+            
+        # Aggressively enforce our translated features list back into the raw Explanation object
+        sv.feature_names = np.array(translated_cols)
+
+        # Draw plot safely in background Agg
+        plt.clf() 
+        plt.rcParams.update({'font.weight': 'normal', 'font.size': 12}) # Boost font size for monitors
+        shap.plots.waterfall(sv, max_display=10, show=False)
+        fig = plt.gcf()
+        fig.set_size_inches(10, 6.5) # Wider resolution to prevent overlapping names
+        
+        # Save to memory buffer 
+        buf = io.BytesIO()
+        plt.tight_layout()
+        # Enforce solid white background (removes transparent blur over Dark Mode Streamlit UI)
+        plt.savefig(buf, format="png", dpi=250, bbox_inches='tight', facecolor='white', transparent=False)
+        plt.close(fig)
+        buf.seek(0)
+        
+        img_str = base64.b64encode(buf.read()).decode('utf-8')
+        return {"status": "success", "shap_base64": img_str}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Explanation generation error: {str(e)}")
