@@ -210,12 +210,12 @@ Together they validate both learning quality and operational utility.
 
 ### Full model comparison
 
-| Model | AUC-ROC | Recall | Accuracy | Precision |
+| Model | AUC-ROC | Recall | Accuracy |
 |---|---|---|---|---|
-| Logistic Regression | 0.7503 | 0.6820 | 0.6878 | 0.1612 |
-| Random Forest | 0.7449 | 0.5458 | 0.7742 | 0.1889 |
-| XGBoost | **0.7649** | 0.6298 | 0.7466 | 0.1853 |
-| LightGBM (tuned) | 0.7642 | **0.6467** | 0.7323 | 0.1792 |
+| Logistic Regression | 0.7503 | 0.6820 | 0.6878 |
+| Random Forest | 0.7449 | 0.5458 | 0.7742  |
+| XGBoost | **0.7649** | 0.6298 | 0.7466 |
+| LightGBM (tuned) | 0.7642 | **0.6467** | 0.7323 |
 
 LightGBM achieves the **highest Recall of all four models** while matching XGBoost's AUC within statistical noise — precisely the balance needed for a system whose mission is to extend credit without exposing lenders to unacceptable risk.
 
