@@ -60,7 +60,7 @@ This single command spins up:
 
 ## Contributors
 - George-techie
-- rh0se
+- rhoda
 - bixzare
 - WanjaWhoopie
 
