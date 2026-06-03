@@ -1,0 +1,20 @@
+[project]
+name = "credit-scoring-fairness"
+version = "0.1.0"
+description = "Fairness-aware credit-default scoring service with drift monitoring and retraining."
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.format]
+quote-style = "double"

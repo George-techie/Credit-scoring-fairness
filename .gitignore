@@ -1,7 +1,7 @@
 model/ 
 venv/ 
 __pycache__/ 
-*.pyc   git add .
+*.pyc
 
 
 # --- Project Specific (From your git status) ---
