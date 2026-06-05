@@ -8,14 +8,13 @@ concern.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import pandas as pd
 from scipy.stats import ks_2samp
 
 from .schema import DRIFT_FEATURES
-
 
 # Significance level: a p-value at or below this rejects the null hypothesis that
 # the two samples are drawn from the same distribution -> drift.

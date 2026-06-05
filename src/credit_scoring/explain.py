@@ -8,7 +8,7 @@ unit-tested without importing shap or training a model.
 
 from __future__ import annotations
 
-from typing import Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 UI_NAME_MAP: Mapping[str, str] = {
     "AMT_INCOME_TOTAL": "Total Income",

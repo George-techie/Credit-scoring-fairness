@@ -8,7 +8,7 @@ imports lightgbm/fairlearn directly and is trivially testable with fakes.
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -38,7 +38,7 @@ def predict_default_proba(model, X: pd.DataFrame) -> np.ndarray:
             raise ValueError("Ensemble weights sum to a non-positive value.")
         weights = weights / total
         acc = np.zeros(len(X), dtype=float)
-        for w, predictor in zip(weights, model.predictors_):
+        for w, predictor in zip(weights, model.predictors_, strict=False):
             acc += w * _positive_class_proba(predictor, X)
         return acc
     return _positive_class_proba(model, X)

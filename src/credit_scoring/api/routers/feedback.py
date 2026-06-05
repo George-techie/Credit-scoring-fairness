@@ -21,4 +21,4 @@ def receive_feedback(feedback: FeedbackData):
         conn.close()
         return {"status": "success", "message": "Feedback recorded successfully."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to record feedback: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to record feedback: {e}") from e

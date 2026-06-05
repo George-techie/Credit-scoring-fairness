@@ -28,7 +28,7 @@ def explain_decision(features: BorrowerFeatures):
     try:
         X = prepare_features(raw, state.feature_names)
     except MissingFeatureError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
     model = state.model
     explainer_model = model
@@ -53,4 +53,4 @@ def explain_decision(features: BorrowerFeatures):
         buf.seek(0)
         return {"status": "success", "shap_base64": base64.b64encode(buf.read()).decode()}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Explanation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Explanation error: {e}") from e

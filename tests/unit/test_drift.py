@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from credit_scoring.drift import DRIFT_ALPHA, detect_drift
 
