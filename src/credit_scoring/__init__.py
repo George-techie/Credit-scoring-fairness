@@ -9,6 +9,7 @@ from __future__ import annotations
 from . import schema
 from .drift import DRIFT_ALPHA, DriftReport, FeatureDrift, detect_drift
 from .explain import UI_NAME_MAP, translate_feature_names
+from .fairness import FairnessReport, GroupRates, audit_fairness, passes_four_fifths_rule
 from .features import MissingFeatureError, drop_demographics, prepare_features
 from .inference import decide, predict_default_proba
 from .retrain import (
@@ -38,6 +39,10 @@ __all__ = [
     "select_champion",
     "MIN_RETRAIN_ROWS",
     "MIN_AUC_IMPROVEMENT",
+    "audit_fairness",
+    "FairnessReport",
+    "GroupRates",
+    "passes_four_fifths_rule",
     "translate_feature_names",
     "UI_NAME_MAP",
 ]
