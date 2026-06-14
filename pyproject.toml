@@ -1,8 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "credit-scoring-fairness"
 version = "0.1.0"
 description = "Fairness-aware credit-default scoring service with drift monitoring and retraining."
 requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "tests"]
